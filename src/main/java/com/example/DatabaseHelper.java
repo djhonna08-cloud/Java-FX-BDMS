@@ -39,11 +39,19 @@ public class DatabaseHelper {
             String createResidents = "CREATE TABLE IF NOT EXISTS residents (" +
                     "id INTEGER PRIMARY KEY AUTO_INCREMENT, " +
                     "first_name VARCHAR(100) NOT NULL, " +
+                    "middle_name VARCHAR(100), " +
                     "last_name VARCHAR(100) NOT NULL, " +
                     "birth_date VARCHAR(20), " +
                     "gender VARCHAR(10), " +
-                    "purok VARCHAR(50))";
+                    "address VARCHAR(500))";
             stmt.execute(createResidents);
+
+            // Ensure middle_name column exists for older DBs
+            try {
+                stmt.execute("ALTER TABLE residents ADD COLUMN middle_name VARCHAR(100)");
+            } catch (SQLException ignored) {
+                // Column probably already exists; ignore
+            }
 
             // Insert sample users only if the table is empty. This is a more robust pattern.
             try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM users")) {
@@ -163,8 +171,8 @@ public class DatabaseHelper {
         // Sanitize sort field to allow only valid column names
         String safeSortField = "last_name";
         if (sortField != null && !sortField.isEmpty()) {
-            if (sortField.equals("first_name") || sortField.equals("last_name") || 
-                sortField.equals("birth_date") || sortField.equals("gender") || sortField.equals("purok")) {
+            if (sortField.equals("first_name") || sortField.equals("middle_name") || sortField.equals("last_name") || 
+                sortField.equals("birth_date") || sortField.equals("gender") || sortField.equals("address")) {
                 safeSortField = sortField;
             }
         }
@@ -204,10 +212,11 @@ public class DatabaseHelper {
                 residents.add(new Resident(
                         rs.getInt("id"),
                         rs.getString("first_name"),
+                        rs.getString("middle_name"),
                         rs.getString("last_name"),
                         rs.getString("birth_date"),
                         rs.getString("gender"),
-                        rs.getString("purok")));
+                        rs.getString("address")));
             }
         } catch (SQLException e) {
             e.printStackTrace();
@@ -216,14 +225,15 @@ public class DatabaseHelper {
     }
 
     public static void addResident(Resident resident) {
-        String sql = "INSERT INTO residents(first_name, last_name, birth_date, gender, purok) VALUES(?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO residents(first_name, middle_name, last_name, birth_date, gender, address) VALUES(?, ?, ?, ?, ?, ?)";
         try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, resident.getFirstName());
-            pstmt.setString(2, resident.getLastName());
-            pstmt.setString(3, resident.getBirthDate());
-            pstmt.setString(4, resident.getGender());
-            pstmt.setString(5, resident.getPurok());
+            pstmt.setString(2, resident.getMiddleName());
+            pstmt.setString(3, resident.getLastName());
+            pstmt.setString(4, resident.getBirthDate());
+            pstmt.setString(5, resident.getGender());
+            pstmt.setString(6, resident.getAddress());
             pstmt.executeUpdate();
         } catch (SQLException e) {
             e.printStackTrace();
@@ -231,15 +241,16 @@ public class DatabaseHelper {
     }
 
     public static void updateResident(Resident resident) {
-        String sql = "UPDATE residents SET first_name = ?, last_name = ?, birth_date = ?, gender = ?, purok = ? WHERE id = ?";
+        String sql = "UPDATE residents SET first_name = ?, middle_name = ?, last_name = ?, birth_date = ?, gender = ?, address = ? WHERE id = ?";
         try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, resident.getFirstName());
-            pstmt.setString(2, resident.getLastName());
-            pstmt.setString(3, resident.getBirthDate());
-            pstmt.setString(4, resident.getGender());
-            pstmt.setString(5, resident.getPurok());
-            pstmt.setInt(6, resident.getId());
+            pstmt.setString(2, resident.getMiddleName());
+            pstmt.setString(3, resident.getLastName());
+            pstmt.setString(4, resident.getBirthDate());
+            pstmt.setString(5, resident.getGender());
+            pstmt.setString(6, resident.getAddress());
+            pstmt.setInt(7, resident.getId());
             pstmt.executeUpdate();
         } catch (SQLException e) {
             e.printStackTrace();
@@ -267,10 +278,11 @@ public class DatabaseHelper {
                 return Optional.of(new Resident(
                         rs.getInt("id"),
                         rs.getString("first_name"),
+                        rs.getString("middle_name"),
                         rs.getString("last_name"),
                         rs.getString("birth_date"),
                         rs.getString("gender"),
-                        rs.getString("purok")));
+                        rs.getString("address")));
             }
         } catch (SQLException e) {
             e.printStackTrace();
@@ -278,18 +290,18 @@ public class DatabaseHelper {
         return Optional.empty();
     }
 
-    public static Map<String, Integer> getResidentDistributionByPurok() {
+    public static Map<String, Integer> getGenderDistribution() {
         Map<String, Integer> distribution = new HashMap<>();
-        String sql = "SELECT purok, COUNT(*) as count FROM residents GROUP BY purok ORDER BY purok";
+        String sql = "SELECT gender, COUNT(*) as count FROM residents WHERE gender IS NOT NULL GROUP BY gender ORDER BY gender";
         try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
             while (rs.next()) {
-                String purok = rs.getString("purok");
-                if (purok == null || purok.trim().isEmpty()) {
-                    purok = "Unassigned";
+                String gender = rs.getString("gender");
+                if (gender == null || gender.trim().isEmpty()) {
+                    gender = "Unspecified";
                 }
-                distribution.put(purok, rs.getInt("count"));
+                distribution.put(gender, rs.getInt("count"));
             }
         } catch (SQLException e) {
             e.printStackTrace();

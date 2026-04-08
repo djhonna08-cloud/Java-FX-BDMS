@@ -52,6 +52,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.io.ByteArrayOutputStream;
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -207,18 +208,10 @@ public class App extends Application {
         separatorHBox.setAlignment(Pos.CENTER);
         VBox.setVgrow(separatorHBox, javafx.scene.layout.Priority.NEVER);
 
-        var googleBtn = new Button("Login with Google");
-        googleBtn.getStyleClass().add("button-secondary");
-        googleBtn.setMaxWidth(Double.MAX_VALUE);
-
-        var githubBtn = new Button("Login with GitHub");
-        githubBtn.getStyleClass().add("button-secondary");
-        githubBtn.setMaxWidth(Double.MAX_VALUE);
-
         var rememberCheckBox = new CheckBox("Remember me for 30 days");
         rememberCheckBox.getStyleClass().add("check-box");
 
-        var formVBox = new VBox(12, subtitle, usernameField, passwordField, loginButton, forgotLink, separatorHBox, googleBtn, githubBtn, rememberCheckBox);
+        var formVBox = new VBox(12, subtitle, usernameField, passwordField, loginButton, forgotLink, separatorHBox, rememberCheckBox);
         formVBox.setAlignment(Pos.CENTER);
         formVBox.getStyleClass().add("login-card");
         formVBox.setMaxWidth(360);
@@ -575,9 +568,9 @@ public class App extends Application {
         int totalPopulation = DatabaseHelper.getResidentCount(null);
         var populationCard = createStatCard("Total Population", String.format("%,d", totalPopulation), "#30c88e");
 
-        var revenueCard = createStatCard("Revenue", "₱12,345", "#eab308");
-        var clearanceCard = createStatCard("Pending Clearances", "42", "#f43f5e");
-        var casesCard = createStatCard("Active Cases", "5", "#3b82f6");
+        var revenueCard = createStatCard("Revenue", "₱0", "#eab308");
+        var clearanceCard = createStatCard("Pending Clearances", "0", "#f43f5e");
+        var casesCard = createStatCard("Active Cases", "0", "#3b82f6");
         
         var statsGrid = new FlowPane(16, 16, populationCard, revenueCard, clearanceCard, casesCard);
         
@@ -593,18 +586,18 @@ public class App extends Application {
             createActivityItem("System backup completed")
         );
         
-        // Create Purok Distribution Chart
-        var purokData = DatabaseHelper.getResidentDistributionByPurok();
+        // Create Gender Distribution Chart
+        var genderData = DatabaseHelper.getGenderDistribution();
         ObservableList<PieChart.Data> pieChartData = FXCollections.observableArrayList();
-        purokData.forEach((purok, count) -> pieChartData.add(new PieChart.Data(purok + " (" + count + ")", count)));
+        genderData.forEach((gender, count) -> pieChartData.add(new PieChart.Data(gender + " (" + count + ")", count)));
 
-        var purokDistributionChart = new PieChart(pieChartData);
-        purokDistributionChart.setTitle("Resident Distribution by Purok");
-        purokDistributionChart.setLegendVisible(true);
-        purokDistributionChart.setLabelsVisible(false); // Labels on slices can get crowded. Legend is better.
+        var genderDistributionChart = new PieChart(pieChartData);
+        genderDistributionChart.setTitle("Resident Distribution by Gender");
+        genderDistributionChart.setLegendVisible(true);
+        genderDistributionChart.setLabelsVisible(false); // Labels on slices can get crowded. Legend is better.
 
-        var bottomRow = new HBox(24, purokDistributionChart, recentActivity);
-        HBox.setHgrow(purokDistributionChart, Priority.ALWAYS);
+        var bottomRow = new HBox(24, genderDistributionChart, recentActivity);
+        HBox.setHgrow(genderDistributionChart, Priority.ALWAYS);
         HBox.setHgrow(recentActivity, Priority.ALWAYS);
 
         var content = new VBox(24, statsGrid, bottomRow);
@@ -644,6 +637,7 @@ public class App extends Application {
     private void showResidentControl(VBox center) {
         residentTable = new TableView<>();
         residentTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        residentTable.setPrefHeight(500);
 
         TableColumn<Resident, String> nameCol = new TableColumn<>("Name");
         nameCol.setCellValueFactory(cellData -> new javafx.beans.binding.StringBinding() {
@@ -654,20 +648,24 @@ public class App extends Application {
             }
         });
         nameCol.setId("last_name");
+        nameCol.setPrefWidth(150);
 
         TableColumn<Resident, String> birthDateCol = new TableColumn<>("Birth Date");
         birthDateCol.setCellValueFactory(new PropertyValueFactory<>("birthDate"));
         birthDateCol.setId("birth_date");
+        birthDateCol.setPrefWidth(120);
 
         TableColumn<Resident, String> genderCol = new TableColumn<>("Gender");
         genderCol.setCellValueFactory(new PropertyValueFactory<>("gender"));
         genderCol.setId("gender");
+        genderCol.setPrefWidth(100);
 
-        TableColumn<Resident, String> purokCol = new TableColumn<>("Purok");
-        purokCol.setCellValueFactory(new PropertyValueFactory<>("purok"));
-        purokCol.setId("purok");
+        TableColumn<Resident, String> addressCol = new TableColumn<>("Address");
+        addressCol.setCellValueFactory(new PropertyValueFactory<>("address"));
+        addressCol.setId("address");
+        addressCol.setPrefWidth(300);
 
-        residentTable.getColumns().setAll(List.of(nameCol, birthDateCol, genderCol, purokCol));
+        residentTable.getColumns().setAll(List.of(nameCol, birthDateCol, genderCol, addressCol));
 
         Button addButton = new Button("Add Resident");
         addButton.setGraphic(new FontIcon(FontAwesomeSolid.PLUS_CIRCLE));
@@ -775,22 +773,36 @@ public class App extends Application {
         bottomBar.setPadding(new Insets(10, 0, 0, 0));
 
         pagination = new Pagination();
-        pagination.setPageFactory(this::createPage);
+        pagination.setPrefHeight(400);
+        pagination.setStyle("-fx-padding: 10;");
 
-        searchField.textProperty().addListener((obs, oldVal, newVal) -> updatePagination());
+        searchField.textProperty().addListener((obs, oldVal, newVal) -> {
+            pagination.setCurrentPageIndex(0); // Reset to first page on search
+            updatePagination();
+        });
 
         var content = new VBox(12, toolBar, pagination, bottomBar);
         VBox.setVgrow(pagination, Priority.ALWAYS);
         updateDashboardContent(center, "Resident & Data Control", content);
+        
+        // Initialize data and pagination
+        System.out.println("Initializing resident table...");
         updatePagination();
+        // Set page factory after updating pagination to trigger initial load
+        pagination.setPageFactory(this::createPage);
+        System.out.println("Resident table initialized, page factory set");
     }
 
     private void loadResidentData() {
         if (pagination != null) {
+            pagination.setCurrentPageIndex(0); // Reset to first page
             updatePagination();
-            // Force the page factory to be called for the current page
-            pagination.setPageFactory(null);
-            pagination.setPageFactory(this::createPage);
+            // Refresh the current page by requesting it again
+            int currentPage = pagination.getCurrentPageIndex();
+            if (currentPage >= 0) {
+                pagination.setPageFactory(null);
+                pagination.setPageFactory(this::createPage);
+            }
         }
     }
 
@@ -805,9 +817,9 @@ public class App extends Application {
             document.add(new Paragraph(" ")); // Spacer
             
             // In a real app, you would loop through resident data from the database
-            document.add(new Paragraph("1. Juan Dela Cruz - Purok 1"));
-            document.add(new Paragraph("2. Maria Clara - Purok 2"));
-            document.add(new Paragraph("3. Jose Rizal - Purok 1"));
+            document.add(new Paragraph("1. Juan Dela Cruz - Purok 1, Barangay San Marino"));
+            document.add(new Paragraph("2. Maria Clara - Purok 2, Barangay San Marino"));
+            document.add(new Paragraph("3. Jose Rizal - Purok 1, Barangay San Marino"));
             
             document.close();
             showToast("PDF generated successfully at: " + path);
@@ -829,7 +841,7 @@ public class App extends Application {
             var font = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 10, com.lowagie.text.Font.BOLD);
             document.add(new Paragraph("BARANGAY ID SYSTEM", new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 8)));
             document.add(new Paragraph(resident.getLastName() + ", " + resident.getFirstName(), font));
-            document.add(new Paragraph("Purok: " + resident.getPurok(), new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 8)));
+            document.add(new Paragraph("Address: " + resident.getAddress(), new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 8)));
 
             // Generate QR Code: "RES:" + ID
             String qrCodeText = "RES:" + resident.getId();
@@ -866,51 +878,67 @@ public class App extends Application {
 
         TextField firstName = new TextField();
         firstName.setPromptText("First Name");
+        TextField middleName = new TextField();
+        middleName.setPromptText("Middle Name (Optional)");
         TextField lastName = new TextField();
         lastName.setPromptText("Last Name");
-        TextField birthDate = new TextField();
-        birthDate.setPromptText("YYYY-MM-DD");
-        TextField gender = new TextField();
-        gender.setPromptText("Gender");
-        TextField purok = new TextField();
-        purok.setPromptText("Purok / Zone");
+        
+        DatePicker birthDate = new DatePicker();
+        birthDate.setPromptText("Select birth date");
+        
+        ComboBox<String> gender = new ComboBox<>();
+        gender.setItems(FXCollections.observableArrayList("Male", "Female", "Other"));
+        gender.setPromptText("Select Gender");
+        
+        TextArea address = new TextArea();
+        address.setPromptText("Enter complete address");
+        address.setWrapText(true);
+        address.setPrefRowCount(4);
 
         grid.add(new Label("First Name:"), 0, 0);
         grid.add(firstName, 1, 0);
-        grid.add(new Label("Last Name:"), 0, 1);
-        grid.add(lastName, 1, 1);
-        grid.add(new Label("Birth Date:"), 0, 2);
-        grid.add(birthDate, 1, 2);
-        grid.add(new Label("Gender:"), 0, 3);
-        grid.add(gender, 1, 3);
-        grid.add(new Label("Purok:"), 0, 4);
-        grid.add(purok, 1, 4);
+        grid.add(new Label("Middle Name:"), 0, 1);
+        grid.add(middleName, 1, 1);
+        grid.add(new Label("Last Name:"), 0, 2);
+        grid.add(lastName, 1, 2);
+        grid.add(new Label("Birth Date:"), 0, 3);
+        grid.add(birthDate, 1, 3);
+        grid.add(new Label("Gender:"), 0, 4);
+        grid.add(gender, 1, 4);
+        grid.add(new Label("Address:"), 0, 5);
+        grid.add(address, 1, 5);
 
         if (existingResident != null) {
             firstName.setText(existingResident.getFirstName());
+            middleName.setText(existingResident.getMiddleName());
             lastName.setText(existingResident.getLastName());
-            birthDate.setText(existingResident.getBirthDate());
-            gender.setText(existingResident.getGender());
-            purok.setText(existingResident.getPurok());
+            try {
+                birthDate.setValue(LocalDate.parse(existingResident.getBirthDate()));
+            } catch (Exception e) {
+                birthDate.setValue(LocalDate.now());
+            }
+            gender.setValue(existingResident.getGender());
+            address.setText(existingResident.getAddress());
+        } else {
+            birthDate.setValue(LocalDate.now());
         }
 
         // --- Validation ---
         // Get the Save button node from the dialog pane.
         Node saveButton = dialog.getDialogPane().lookupButton(saveButtonType);
         
-        // Create a binding that evaluates to true if any of the text fields are empty.
-        // This is a declarative way to express the validation rule.
+        // Create a binding that evaluates to true if any required fields are empty or not selected.
         var emptyBinding = Bindings.createBooleanBinding(() ->
                 firstName.getText().trim().isEmpty() ||
                 lastName.getText().trim().isEmpty() ||
-                birthDate.getText().trim().isEmpty() ||
-                gender.getText().trim().isEmpty() ||
-                purok.getText().trim().isEmpty(),
+                birthDate.getValue() == null ||
+                gender.getValue() == null ||
+                address.getText().trim().isEmpty(),
             firstName.textProperty(),
             lastName.textProperty(),
-            birthDate.textProperty(),
-            gender.textProperty(),
-            purok.textProperty()
+            birthDate.valueProperty(),
+            gender.valueProperty(),
+            address.textProperty()
         );
 
         // Bind the button's disable property to the binding. The button will be disabled as long as the binding is true.
@@ -921,7 +949,8 @@ public class App extends Application {
         dialog.setResultConverter(dialogButton -> {
             if (dialogButton == saveButtonType) {
                 int id = (existingResident == null) ? 0 : existingResident.getId();
-                return new Resident(id, firstName.getText(), lastName.getText(), birthDate.getText(), gender.getText(), purok.getText());
+                return new Resident(id, firstName.getText(), middleName.getText(), lastName.getText(), 
+                        birthDate.getValue().toString(), gender.getValue(), address.getText());
             }
             return null;
         });
@@ -1029,18 +1058,44 @@ public class App extends Application {
     }
 
     private Node createPage(int pageIndex) {
-        String filter = searchField.getText();
-        ObservableList<Resident> residents = DatabaseHelper.getResidents(filter, pageIndex, ROWS_PER_PAGE, currentSortField, currentSortOrder);
-        residentTable.setItems(residents);
-        return residentTable;
+        try {
+            String filter = (searchField != null) ? searchField.getText() : "";
+            System.out.println("Loading page " + pageIndex + " with filter: '" + filter + "'");
+            
+            ObservableList<Resident> residents = DatabaseHelper.getResidents(filter, pageIndex, ROWS_PER_PAGE, currentSortField, currentSortOrder);
+            System.out.println("Fetched " + residents.size() + " residents for page " + pageIndex);
+            
+            residentTable.setItems(residents);
+            
+            // Wrap table in a BorderPane for proper pagination display
+            BorderPane pageContainer = new BorderPane();
+            pageContainer.setCenter(residentTable);
+            return pageContainer;
+        } catch (Exception e) {
+            e.printStackTrace();
+            Label errorLabel = new Label("Error loading residents: " + e.getMessage());
+            errorLabel.setStyle("-fx-text-fill: red; -fx-font-size: 12;");
+            BorderPane errorContainer = new BorderPane(errorLabel);
+            return errorContainer;
+        }
     }
 
     private void updatePagination() {
-        String filter = searchField.getText();
-        int totalCount = DatabaseHelper.getResidentCount(filter);
-        int pageCount = (totalCount + ROWS_PER_PAGE - 1) / ROWS_PER_PAGE;
-        if (pageCount == 0) pageCount = 1;
-        pagination.setPageCount(pageCount);
+        try {
+            String filter = (searchField != null) ? searchField.getText() : "";
+            int totalCount = DatabaseHelper.getResidentCount(filter);
+            int pageCount = (totalCount + ROWS_PER_PAGE - 1) / ROWS_PER_PAGE;
+            if (pageCount == 0) pageCount = 1;
+            
+            System.out.println("Total residents: " + totalCount + ", Page count: " + pageCount);
+            
+            pagination.setPageCount(pageCount);
+        } catch (Exception e) {
+            e.printStackTrace();
+            if (pagination != null) {
+                pagination.setPageCount(1);
+            }
+        }
     }
 
     private VBox createCollapsibleSubmenu(String title, List<String> items, Consumer<String> onSelect) {
