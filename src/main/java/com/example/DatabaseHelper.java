@@ -53,6 +53,13 @@ public class DatabaseHelper {
                 // Column probably already exists; ignore
             }
 
+            // Ensure address column exists for older DBs
+            try {
+                stmt.execute("ALTER TABLE residents ADD COLUMN address VARCHAR(500)");
+            } catch (SQLException ignored) {
+                // Column probably already exists; ignore
+            }
+
             // Insert sample users only if the table is empty. This is a more robust pattern.
             try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM users")) {
                 if (rs.next() && rs.getInt(1) == 0) {
@@ -69,6 +76,21 @@ public class DatabaseHelper {
                         stmt.execute(insert);
                     }
                     System.out.println("Default users inserted.");
+                }
+            }
+
+            // Insert sample residents only if the table is empty
+            try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM residents")) {
+                if (rs.next() && rs.getInt(1) == 0) {
+                    System.out.println("Residents table is empty. Inserting sample data...");
+                    String[] sampleResidents = {
+                        "INSERT INTO residents (first_name, last_name, birth_date, gender, address) VALUES ('Juan', 'Dela Cruz', '1990-05-15', 'Male', 'Purok 1, Brgy. San Marino')",
+                        "INSERT INTO residents (first_name, last_name, birth_date, gender, address) VALUES ('Maria', 'Clara', '1992-10-20', 'Female', 'Purok 2, Brgy. San Marino')",
+                        "INSERT INTO residents (first_name, last_name, birth_date, gender, address) VALUES ('Jose', 'Rizal', '1861-06-19', 'Male', 'Calamba, Laguna')"
+                    };
+                    for (String insert : sampleResidents) {
+                        stmt.execute(insert);
+                    }
                 }
             }
         } catch (SQLException e) {
@@ -136,6 +158,24 @@ public class DatabaseHelper {
                 permissions.put("All", "None");
         }
         return permissions;
+    }
+
+    public static ObservableList<SystemUser> getSystemUsers() {
+        ObservableList<SystemUser> users = FXCollections.observableArrayList();
+        String sql = "SELECT id, username, role FROM users";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                users.add(new SystemUser(
+                    rs.getInt("id"),
+                    rs.getString("username"),
+                    rs.getString("role")));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return users;
     }
 
     public static int getResidentCount(String filter) {
@@ -307,5 +347,21 @@ public class DatabaseHelper {
             e.printStackTrace();
         }
         return distribution;
+    }
+
+    public static class SystemUser {
+        private final int id;
+        private final String username;
+        private final String role;
+
+        public SystemUser(int id, String username, String role) {
+            this.id = id;
+            this.username = username;
+            this.role = role;
+        }
+
+        public int getId() { return id; }
+        public String getUsername() { return username; }
+        public String getRole() { return role; }
     }
 }

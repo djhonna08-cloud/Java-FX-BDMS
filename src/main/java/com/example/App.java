@@ -20,6 +20,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import javafx.scene.shape.Rectangle;
 import javafx.stage.Stage;
+import javafx.stage.FileChooser;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.util.Duration;
@@ -39,13 +40,9 @@ import com.google.zxing.Result;
 import com.github.sarxos.webcam.Webcam;
 import javafx.embed.swing.SwingFXUtils;
 
-import com.lowagie.text.Document;
-import com.lowagie.text.DocumentException;
-import com.lowagie.text.Paragraph;
-import com.lowagie.text.pdf.PdfWriter;
-
 import java.io.IOException;
 import java.io.FileOutputStream;
+import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -60,6 +57,11 @@ import java.util.Optional;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.awt.image.BufferedImage;
+import java.awt.Graphics2D;
+import java.awt.BasicStroke;
+import java.awt.FontMetrics;
+import java.awt.RenderingHints;
+import javax.imageio.ImageIO;
 import javafx.beans.binding.Bindings;
 
 public class App extends Application {
@@ -95,6 +97,7 @@ public class App extends Application {
     // Last selected view (used when rebuilding UI on theme toggle)
     private String activeSection = "overview";
     private String activeSubmenuItem = null;
+    private javafx.beans.value.ChangeListener<String> searchListener;
 
     @Override
     public void start(Stage stage) {
@@ -329,7 +332,9 @@ public class App extends Application {
         var userSubmenu = createCollapsibleSubmenu("User & Access", java.util.List.of(
             "Manage Roles", "Permissions", "Audit Log"), item -> {
                 setActiveNav(usersBtn);
-                if ("Audit Log".equals(item)) {
+                if ("Manage Roles".equals(item)) {
+                    showSystemUsers(center);
+                } else if ("Audit Log".equals(item)) {
                     showAuditLog(center);
                 } else {
                     updateDashboardContent(center, "User & Access Management", "Selected: " + item);
@@ -634,6 +639,27 @@ public class App extends Application {
         updateDashboardContent(center, "Audit Log", table);
     }
 
+    private void showSystemUsers(VBox center) {
+        var table = new TableView<DatabaseHelper.SystemUser>();
+        table.getStyleClass().add("table-view");
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+
+        TableColumn<DatabaseHelper.SystemUser, Integer> idCol = new TableColumn<>("ID");
+        idCol.setCellValueFactory(new PropertyValueFactory<>("id"));
+        idCol.setPrefWidth(50);
+
+        TableColumn<DatabaseHelper.SystemUser, String> userCol = new TableColumn<>("Username");
+        userCol.setCellValueFactory(new PropertyValueFactory<>("username"));
+
+        TableColumn<DatabaseHelper.SystemUser, String> roleCol = new TableColumn<>("Role");
+        roleCol.setCellValueFactory(new PropertyValueFactory<>("role"));
+
+        table.getColumns().setAll(List.of(idCol, userCol, roleCol));
+        table.setItems(DatabaseHelper.getSystemUsers());
+
+        updateDashboardContent(center, "Manage System Users & Roles", table);
+    }
+
     private void showResidentControl(VBox center) {
         residentTable = new TableView<>();
         residentTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
@@ -679,20 +705,20 @@ public class App extends Application {
         Button idButton = new Button("Print ID");
         idButton.setGraphic(new FontIcon(FontAwesomeSolid.ID_CARD));
 
-        Button viewQrButton = new Button("View QR");
-        viewQrButton.setGraphic(new FontIcon(FontAwesomeSolid.QRCODE));
+        Button viewIdButton = new Button("View ID");
+        viewIdButton.setGraphic(new FontIcon(FontAwesomeSolid.ID_CARD));
 
         editButton.setDisable(true);
         deleteButton.setDisable(true);
         idButton.setDisable(true);
-        viewQrButton.setDisable(true);
+        viewIdButton.setDisable(true);
 
         residentTable.getSelectionModel().selectedItemProperty().addListener((obs, oldSelection, newSelection) -> {
             boolean isSelected = newSelection != null;
             editButton.setDisable(!isSelected);
             deleteButton.setDisable(!isSelected);
             idButton.setDisable(!isSelected);
-            viewQrButton.setDisable(!isSelected);
+            viewIdButton.setDisable(!isSelected);
         });
 
         // Custom sort policy for server-side sorting with pagination
@@ -707,14 +733,14 @@ public class App extends Application {
                     currentSortOrder = col.getSortType() == TableColumn.SortType.ASCENDING ? "ASC" : "DESC";
                 }
             }
-            loadResidentData();
+            loadResidentData(true); // Reset to first page on sort change
             return true;
         });
 
         addButton.setOnAction(e -> {
             showResidentDialog(null).ifPresent(resident -> {
                 DatabaseHelper.addResident(resident);
-                loadResidentData();
+                loadResidentData(false); // Maintain current page
                 showToast("Resident added successfully.");
             });
         });
@@ -723,8 +749,8 @@ public class App extends Application {
             Resident selected = residentTable.getSelectionModel().getSelectedItem();
             if (selected != null) {
                 showResidentDialog(selected).ifPresent(resident -> {
-                    DatabaseHelper.updateResident(resident);
-                    loadResidentData();
+                    DatabaseHelper.updateResident(resident); // Update the resident in the database
+                    loadResidentData(false); // Maintain current page
                     showToast("Resident updated successfully.");
                 });
             }
@@ -740,7 +766,7 @@ public class App extends Application {
                 confirm.showAndWait().ifPresent(response -> {
                     if (response == ButtonType.OK) {
                         DatabaseHelper.deleteResident(selected.getId());
-                        loadResidentData();
+                        loadResidentData(false); // Maintain current page
                         showToast("Resident deleted successfully.");
                     }
                 });
@@ -754,14 +780,14 @@ public class App extends Application {
             }
         });
 
-        viewQrButton.setOnAction(e -> {
+        viewIdButton.setOnAction(e -> {
             Resident selected = residentTable.getSelectionModel().getSelectedItem();
             if (selected != null) {
-                showQRCodeDialog(selected);
+                showResidentIDDialog(selected);
             }
         });
 
-        ToolBar toolBar = new ToolBar(addButton, editButton, deleteButton, new Separator(Orientation.VERTICAL), idButton, viewQrButton);
+        ToolBar toolBar = new ToolBar(addButton, editButton, deleteButton, new Separator(Orientation.VERTICAL), idButton, viewIdButton);
         toolBar.setStyle("-fx-background-color: transparent; -fx-padding: 0;");
 
         var exportButton = new Button("📄 Export to PDF");
@@ -776,91 +802,260 @@ public class App extends Application {
         pagination.setPrefHeight(400);
         pagination.setStyle("-fx-padding: 10;");
 
-        searchField.textProperty().addListener((obs, oldVal, newVal) -> {
-            pagination.setCurrentPageIndex(0); // Reset to first page on search
-            updatePagination();
-        });
+        // Remove existing listener to prevent duplicates if the tab is re-opened
+        if (searchListener != null) {
+            searchField.textProperty().removeListener(searchListener);
+        }
+        searchListener = (obs, oldVal, newVal) -> loadResidentData(true);
+        searchField.textProperty().addListener(searchListener);
 
         var content = new VBox(12, toolBar, pagination, bottomBar);
         VBox.setVgrow(pagination, Priority.ALWAYS);
         updateDashboardContent(center, "Resident & Data Control", content);
         
-        // Initialize data and pagination
+        // Initial load of resident data, resetting to page 0
         System.out.println("Initializing resident table...");
-        updatePagination();
-        // Set page factory after updating pagination to trigger initial load
-        pagination.setPageFactory(this::createPage);
-        System.out.println("Resident table initialized, page factory set");
+        loadResidentData(true);
     }
 
-    private void loadResidentData() {
-        if (pagination != null) {
-            pagination.setCurrentPageIndex(0); // Reset to first page
-            updatePagination();
-            // Refresh the current page by requesting it again
-            int currentPage = pagination.getCurrentPageIndex();
-            if (currentPage >= 0) {
-                pagination.setPageFactory(null);
-                pagination.setPageFactory(this::createPage);
+    /**
+     * Refreshes the resident table data.
+     * If resetToFirstPage is true, it sets the current page to 0.
+     * Otherwise, it attempts to maintain the current page, adjusting if necessary
+     * if the total number of pages has changed (e.g., after deletions).
+     */
+    private void loadResidentData(boolean resetToFirstPage) {
+        if (pagination == null) {
+            return; // Should not happen if called after pagination is initialized
+        }
+
+        // Recalculate total page count based on current filter
+        String searchText = (searchField != null) ? searchField.getText().trim() : "";
+        String filter = searchText.isEmpty() ? null : searchText;
+        int totalCount = DatabaseHelper.getResidentCount(filter);
+        int newPageCount = Math.max(1, (totalCount + ROWS_PER_PAGE - 1) / ROWS_PER_PAGE);
+
+        System.out.println("Refreshing resident data. Total residents: " + totalCount + ", Page count: " + newPageCount);
+
+        // Update pagination control's page count
+        pagination.setPageCount(newPageCount);
+
+        // Determine the target page index
+        int currentPageIndex = pagination.getCurrentPageIndex();
+        int targetPageIndex;
+        if (resetToFirstPage) {
+            targetPageIndex = 0;
+        } else {
+            targetPageIndex = currentPageIndex;
+            // Adjust current page index if it's now out of bounds
+            if (targetPageIndex >= newPageCount) {
+                targetPageIndex = Math.max(0, newPageCount - 1);
             }
         }
+        
+        // Force the Pagination to reload data from the factory.
+        // Resetting the factory ensures createPage is called.
+        pagination.setPageFactory(null);
+        pagination.setPageFactory(this::createPage);
+        
+        // Always set the current page index to trigger the factory.
+        // This ensures the factory is called even when the index doesn't change.
+        pagination.setCurrentPageIndex(targetPageIndex);
     }
 
     private void generateResidentPdf() {
-        Document document = new Document();
         try {
-            String path = System.getProperty("user.home") + "/Downloads/Resident_List.pdf";
-            PdfWriter.getInstance(document, new FileOutputStream(path));
-            document.open();
-            document.add(new Paragraph("Barangay Resident List"));
-            document.add(new Paragraph("Generated on: " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))));
-            document.add(new Paragraph(" ")); // Spacer
+            // Export resident list as text file
+            ObservableList<Resident> residents = residentTable.getItems();
+            StringBuilder content = new StringBuilder();
+            content.append("BARANGAY RESIDENT LIST\n");
+            content.append("Generated on: ").append(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))).append("\n");
+            content.append("========================================\n\n");
             
-            // In a real app, you would loop through resident data from the database
-            document.add(new Paragraph("1. Juan Dela Cruz - Purok 1, Barangay San Marino"));
-            document.add(new Paragraph("2. Maria Clara - Purok 2, Barangay San Marino"));
-            document.add(new Paragraph("3. Jose Rizal - Purok 1, Barangay San Marino"));
+            for (Resident resident : residents) {
+                content.append("ID: ").append(String.format("%06d", resident.getId())).append("\n");
+                content.append("Name: ").append(resident.getLastName()).append(", ").append(resident.getFirstName());
+                if (resident.getMiddleName() != null && !resident.getMiddleName().isEmpty()) {
+                    content.append(" ").append(resident.getMiddleName());
+                }
+                content.append("\n");
+                content.append("Birth Date: ").append(resident.getBirthDate()).append("\n");
+                content.append("Gender: ").append(resident.getGender()).append("\n");
+                content.append("Address: ").append(resident.getAddress()).append("\n");
+                content.append("----------------------------------------\n\n");
+            }
             
-            document.close();
-            showToast("PDF generated successfully at: " + path);
-        } catch (DocumentException | IOException e) {
+            String fileName = "Resident_List_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss")) + ".txt";
+            String path = System.getProperty("user.home") + "/Downloads/" + fileName;
+            Files.write(Paths.get(path), content.toString().getBytes());
+            showToast("Resident list exported successfully at: " + path);
+        } catch (IOException e) {
             e.printStackTrace();
-            showAlert("Error", "Failed to generate PDF.");
+            showAlert("Error", "Failed to export resident list: " + e.getMessage());
         }
     }
 
     private void generateResidentIDCard(Resident resident) {
-        // ID-1 Card Size (approx 242x153 points)
-        Document document = new Document(new com.lowagie.text.Rectangle(242, 153));
         try {
-            String path = System.getProperty("user.home") + "/Downloads/ID_" + resident.getId() + ".pdf";
-            PdfWriter.getInstance(document, new FileOutputStream(path));
-            document.open();
-
-            // Add Resident Info
-            var font = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 10, com.lowagie.text.Font.BOLD);
-            document.add(new Paragraph("BARANGAY ID SYSTEM", new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 8)));
-            document.add(new Paragraph(resident.getLastName() + ", " + resident.getFirstName(), font));
-            document.add(new Paragraph("Address: " + resident.getAddress(), new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 8)));
-
-            // Generate QR Code: "RES:" + ID
+            // Create generatedID folder if it doesn't exist
+            File generatedIDFolder = new File("generatedID");
+            if (!generatedIDFolder.exists()) {
+                generatedIDFolder.mkdir();
+            }
+            
+            // Create a BufferedImage for the ID card (ID-1 size: 85.6 x 53.98 mm at 300 DPI)
+            int width = 1024;  // High resolution
+            int height = 640;
+            BufferedImage idImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+            Graphics2D g2d = idImage.createGraphics();
+            
+            // Enable anti-aliasing
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            
+            // Background - White
+            g2d.setColor(java.awt.Color.WHITE);
+            g2d.fillRect(0, 0, width, height);
+            
+            // Border
+            g2d.setColor(new java.awt.Color(0, 51, 102)); // Dark blue
+            g2d.setStroke(new BasicStroke(3));
+            g2d.drawRect(0, 0, width - 1, height - 1);
+            
+            // Header
+            g2d.setColor(new java.awt.Color(0, 51, 102)); // Dark blue background
+            g2d.fillRect(0, 0, width, 60);
+            
+            g2d.setColor(java.awt.Color.YELLOW);
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.BOLD, 28));
+            FontMetrics fm = g2d.getFontMetrics();
+            String headerText = "BARANGAY ID";
+            int x = (width - fm.stringWidth(headerText)) / 2;
+            g2d.drawString(headerText, x, 45);
+            
+            // Subheader
+            g2d.setColor(java.awt.Color.WHITE);
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.PLAIN, 10));
+            g2d.drawString("Barangay San Marino", 20, 58);
+            
+            // Photo section on the left
+            int photoX = 20;
+            int photoY = 80;
+            int photoSize = 120;
+            
+            // Try to load and display actual photo
+            if (resident.getPhotoPath() != null && !resident.getPhotoPath().isEmpty()) {
+                try {
+                    File photoFile = new File(resident.getPhotoPath());
+                    if (photoFile.exists()) {
+                        BufferedImage photoImage = ImageIO.read(photoFile);
+                        if (photoImage != null) {
+                            g2d.drawImage(photoImage, photoX, photoY, photoSize, photoSize, null);
+                        } else {
+                            drawPhotoPlaceholder(g2d, photoX, photoY, photoSize);
+                        }
+                    } else {
+                        drawPhotoPlaceholder(g2d, photoX, photoY, photoSize);
+                    }
+                } catch (Exception e) {
+                    drawPhotoPlaceholder(g2d, photoX, photoY, photoSize);
+                }
+            } else {
+                drawPhotoPlaceholder(g2d, photoX, photoY, photoSize);
+            }
+            
+            // Details section on the right
+            int detailsX = photoX + photoSize + 30;
+            int startY = 85;
+            int lineHeight = 25;
+            
+            g2d.setColor(java.awt.Color.BLACK);
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.BOLD, 11));
+            
+            // ID Number
+            g2d.drawString("ID No.:", detailsX, startY);
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.PLAIN, 12));
+            g2d.drawString(String.format("%06d", resident.getId()), detailsX + 80, startY);
+            
+            startY += lineHeight;
+            
+            // Full Name
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.BOLD, 11));
+            g2d.drawString("Name:", detailsX, startY);
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.PLAIN, 12));
+            String fullName = resident.getLastName() + ", " + resident.getFirstName();
+            if (resident.getMiddleName() != null && !resident.getMiddleName().isEmpty()) {
+                fullName += " " + resident.getMiddleName();
+            }
+            g2d.drawString(fullName, detailsX + 80, startY);
+            
+            startY += lineHeight;
+            
+            // Birth Date
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.BOLD, 11));
+            g2d.drawString("DoB:", detailsX, startY);
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.PLAIN, 12));
+            g2d.drawString(resident.getBirthDate() != null ? resident.getBirthDate() : "N/A", detailsX + 80, startY);
+            
+            startY += lineHeight;
+            
+            // Gender
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.BOLD, 11));
+            g2d.drawString("Gender:", detailsX, startY);
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.PLAIN, 12));
+            g2d.drawString(resident.getGender() != null ? resident.getGender() : "N/A", detailsX + 80, startY);
+            
+            startY += lineHeight;
+            
+            // Address (truncated for space)
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.BOLD, 11));
+            g2d.drawString("Address:", detailsX, startY);
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.PLAIN, 10));
+            String address = resident.getAddress() != null ? resident.getAddress() : "N/A";
+            if (address.length() > 40) {
+                address = address.substring(0, 40) + "...";
+            }
+            g2d.drawString(address, detailsX + 80, startY);
+            
+            // Generate QR Code
             String qrCodeText = "RES:" + resident.getId();
             QRCodeWriter qrCodeWriter = new QRCodeWriter();
-            BitMatrix bitMatrix = qrCodeWriter.encode(qrCodeText, BarcodeFormat.QR_CODE, 100, 100);
+            BitMatrix bitMatrix = qrCodeWriter.encode(qrCodeText, BarcodeFormat.QR_CODE, 120, 120);
+            BufferedImage qrImage = MatrixToImageWriter.toBufferedImage(bitMatrix);
             
-            ByteArrayOutputStream pngOutputStream = new ByteArrayOutputStream();
-            MatrixToImageWriter.writeToStream(bitMatrix, "PNG", pngOutputStream);
+            // Place QR code on the right side
+            int qrX = width - 140;
+            int qrY = photoY;
+            g2d.drawImage(qrImage, qrX, qrY, 120, 120, null);
             
-            com.lowagie.text.Image qrImage = com.lowagie.text.Image.getInstance(pngOutputStream.toByteArray());
-            qrImage.setAbsolutePosition(150, 40); // Position on the right side of the card
-            document.add(qrImage);
-
-            document.close();
-            showToast("ID Card generated: " + path);
+            // Signature area at bottom
+            g2d.setColor(new java.awt.Color(200, 200, 200));
+            g2d.fillRect(20, height - 50, width - 40, 1);
+            g2d.setColor(java.awt.Color.BLACK);
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.PLAIN, 9));
+            g2d.drawString("Official Signature / Seal", 25, height - 20);
+            
+            g2d.dispose();
+            
+            // Save as PNG in generatedID folder
+            String fileName = "ID_" + String.format("%06d", resident.getId()) + ".png";
+            String path = "generatedID/" + fileName;
+            ImageIO.write(idImage, "PNG", new File(path));
+            
+            showToast("ID Card (PNG) printed: " + path);
         } catch (Exception e) {
             e.printStackTrace();
-            showAlert("Error", "Failed to generate ID Card.");
+            showAlert("Error", "Failed to generate ID Card: " + e.getMessage());
         }
+    }
+    
+    private void drawPhotoPlaceholder(Graphics2D g2d, int x, int y, int size) {
+        g2d.setColor(new java.awt.Color(200, 200, 200));
+        g2d.fillRect(x, y, size, size);
+        
+        g2d.setColor(new java.awt.Color(100, 100, 100));
+        g2d.setFont(new java.awt.Font("Arial", java.awt.Font.PLAIN, 12));
+        g2d.drawString("Photo", x + 35, y + 60);
     }
 
     private Optional<Resident> showResidentDialog(Resident existingResident) {
@@ -894,6 +1089,42 @@ public class App extends Application {
         address.setPromptText("Enter complete address");
         address.setWrapText(true);
         address.setPrefRowCount(4);
+        
+        // Photo section
+        ImageView photoPreview = new ImageView();
+        photoPreview.setFitWidth(100);
+        photoPreview.setFitHeight(100);
+        photoPreview.setStyle("-fx-border-color: #cccccc; -fx-border-width: 1;");
+        
+        Label photoPathLabel = new Label("No photo selected");
+        photoPathLabel.setStyle("-fx-font-size: 10;");
+        
+        Button uploadPhotoButton = new Button("Upload Photo");
+        uploadPhotoButton.setStyle("-fx-padding: 8px;");
+        
+        final String[] selectedPhotoPath = {null};
+        
+        uploadPhotoButton.setOnAction(e -> {
+            FileChooser fileChooser = new FileChooser();
+            fileChooser.setTitle("Select Resident Photo");
+            fileChooser.getExtensionFilters().addAll(
+                new FileChooser.ExtensionFilter("Image Files", "*.jpg", "*.jpeg", "*.png", "*.gif")
+            );
+            File selectedFile = fileChooser.showOpenDialog(dialog.getDialogPane().getScene().getWindow());
+            if (selectedFile != null) {
+                selectedPhotoPath[0] = selectedFile.getAbsolutePath();
+                photoPathLabel.setText(selectedFile.getName());
+                try {
+                    Image image = new Image(new java.io.FileInputStream(selectedFile), 100, 100, true, true);
+                    photoPreview.setImage(image);
+                } catch (Exception ex) {
+                    showAlert("Error", "Could not load image: " + ex.getMessage());
+                }
+            }
+        });
+        
+        VBox photoBox = new VBox(8, photoPreview, photoPathLabel, uploadPhotoButton);
+        photoBox.setStyle("-fx-border-color: #e0e0e0; -fx-border-width: 1; -fx-padding: 10;");
 
         grid.add(new Label("First Name:"), 0, 0);
         grid.add(firstName, 1, 0);
@@ -907,6 +1138,8 @@ public class App extends Application {
         grid.add(gender, 1, 4);
         grid.add(new Label("Address:"), 0, 5);
         grid.add(address, 1, 5);
+        grid.add(new Label("Photo:"), 0, 6);
+        grid.add(photoBox, 1, 6);
 
         if (existingResident != null) {
             firstName.setText(existingResident.getFirstName());
@@ -919,6 +1152,19 @@ public class App extends Application {
             }
             gender.setValue(existingResident.getGender());
             address.setText(existingResident.getAddress());
+            
+            // Load existing photo if available
+            if (existingResident.getPhotoPath() != null && !existingResident.getPhotoPath().isEmpty()) {
+                selectedPhotoPath[0] = existingResident.getPhotoPath();
+                File photoFile = new File(existingResident.getPhotoPath());
+                photoPathLabel.setText(photoFile.getName());
+                try {
+                    Image image = new Image(new java.io.FileInputStream(photoFile), 100, 100, true, true);
+                    photoPreview.setImage(image);
+                } catch (Exception ex) {
+                    // Photo file may not exist
+                }
+            }
         } else {
             birthDate.setValue(LocalDate.now());
         }
@@ -950,7 +1196,7 @@ public class App extends Application {
             if (dialogButton == saveButtonType) {
                 int id = (existingResident == null) ? 0 : existingResident.getId();
                 return new Resident(id, firstName.getText(), middleName.getText(), lastName.getText(), 
-                        birthDate.getValue().toString(), gender.getValue(), address.getText());
+                        birthDate.getValue().toString(), gender.getValue(), address.getText(), selectedPhotoPath[0]);
             }
             return null;
         });
@@ -958,25 +1204,157 @@ public class App extends Application {
         return dialog.showAndWait();
     }
 
-    private void showQRCodeDialog(Resident resident) {
+    private void showResidentIDDialog(Resident resident) {
         try {
+            // Create the same professional ID image
+            int width = 1024;
+            int height = 640;
+            BufferedImage idImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+            Graphics2D g2d = idImage.createGraphics();
+            
+            // Enable anti-aliasing
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            
+            // Background - White
+            g2d.setColor(java.awt.Color.WHITE);
+            g2d.fillRect(0, 0, width, height);
+            
+            // Border
+            g2d.setColor(new java.awt.Color(0, 51, 102)); // Dark blue
+            g2d.setStroke(new BasicStroke(3));
+            g2d.drawRect(0, 0, width - 1, height - 1);
+            
+            // Header
+            g2d.setColor(new java.awt.Color(0, 51, 102)); // Dark blue background
+            g2d.fillRect(0, 0, width, 60);
+            
+            g2d.setColor(java.awt.Color.YELLOW);
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.BOLD, 28));
+            FontMetrics fm = g2d.getFontMetrics();
+            String headerText = "BARANGAY ID";
+            int x = (width - fm.stringWidth(headerText)) / 2;
+            g2d.drawString(headerText, x, 45);
+            
+            // Subheader
+            g2d.setColor(java.awt.Color.WHITE);
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.PLAIN, 10));
+            g2d.drawString("Barangay San Marino", 20, 58);
+            
+            // Photo section on the left
+            int photoX = 20;
+            int photoY = 80;
+            int photoSize = 120;
+            
+            // Try to load and display actual photo
+            if (resident.getPhotoPath() != null && !resident.getPhotoPath().isEmpty()) {
+                try {
+                    File photoFile = new File(resident.getPhotoPath());
+                    if (photoFile.exists()) {
+                        BufferedImage photoImage = ImageIO.read(photoFile);
+                        if (photoImage != null) {
+                            g2d.drawImage(photoImage, photoX, photoY, photoSize, photoSize, null);
+                        } else {
+                            drawPhotoPlaceholder(g2d, photoX, photoY, photoSize);
+                        }
+                    } else {
+                        drawPhotoPlaceholder(g2d, photoX, photoY, photoSize);
+                    }
+                } catch (Exception e) {
+                    drawPhotoPlaceholder(g2d, photoX, photoY, photoSize);
+                }
+            } else {
+                drawPhotoPlaceholder(g2d, photoX, photoY, photoSize);
+            }
+            
+            // Details section on the right
+            int detailsX = photoX + photoSize + 30;
+            int startY = 85;
+            int lineHeight = 25;
+            
+            g2d.setColor(java.awt.Color.BLACK);
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.BOLD, 11));
+            
+            // ID Number
+            g2d.drawString("ID No.:", detailsX, startY);
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.PLAIN, 12));
+            g2d.drawString(String.format("%06d", resident.getId()), detailsX + 80, startY);
+            
+            startY += lineHeight;
+            
+            // Full Name
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.BOLD, 11));
+            g2d.drawString("Name:", detailsX, startY);
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.PLAIN, 12));
+            String fullName = resident.getLastName() + ", " + resident.getFirstName();
+            if (resident.getMiddleName() != null && !resident.getMiddleName().isEmpty()) {
+                fullName += " " + resident.getMiddleName();
+            }
+            g2d.drawString(fullName, detailsX + 80, startY);
+            
+            startY += lineHeight;
+            
+            // Birth Date
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.BOLD, 11));
+            g2d.drawString("DoB:", detailsX, startY);
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.PLAIN, 12));
+            g2d.drawString(resident.getBirthDate() != null ? resident.getBirthDate() : "N/A", detailsX + 80, startY);
+            
+            startY += lineHeight;
+            
+            // Gender
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.BOLD, 11));
+            g2d.drawString("Gender:", detailsX, startY);
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.PLAIN, 12));
+            g2d.drawString(resident.getGender() != null ? resident.getGender() : "N/A", detailsX + 80, startY);
+            
+            startY += lineHeight;
+            
+            // Address (truncated for space)
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.BOLD, 11));
+            g2d.drawString("Address:", detailsX, startY);
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.PLAIN, 10));
+            String address = resident.getAddress() != null ? resident.getAddress() : "N/A";
+            if (address.length() > 40) {
+                address = address.substring(0, 40) + "...";
+            }
+            g2d.drawString(address, detailsX + 80, startY);
+            
+            // Generate QR Code
             String qrCodeText = "RES:" + resident.getId();
             QRCodeWriter qrCodeWriter = new QRCodeWriter();
-            BitMatrix bitMatrix = qrCodeWriter.encode(qrCodeText, BarcodeFormat.QR_CODE, 300, 300);
+            BitMatrix bitMatrix = qrCodeWriter.encode(qrCodeText, BarcodeFormat.QR_CODE, 120, 120);
+            BufferedImage qrImage = MatrixToImageWriter.toBufferedImage(bitMatrix);
             
-            BufferedImage bufferedImage = MatrixToImageWriter.toBufferedImage(bitMatrix);
-            Image fxImage = SwingFXUtils.toFXImage(bufferedImage, null);
+            // Place QR code on the right side
+            int qrX = width - 140;
+            int qrY = photoY;
+            g2d.drawImage(qrImage, qrX, qrY, 120, 120, null);
             
+            // Signature area at bottom
+            g2d.setColor(new java.awt.Color(200, 200, 200));
+            g2d.fillRect(20, height - 50, width - 40, 1);
+            g2d.setColor(java.awt.Color.BLACK);
+            g2d.setFont(new java.awt.Font("Arial", java.awt.Font.PLAIN, 9));
+            g2d.drawString("Official Signature / Seal", 25, height - 20);
+            
+            g2d.dispose();
+            
+            // Display in a dialog
+            Image fxImage = SwingFXUtils.toFXImage(idImage, null);
             ImageView imageView = new ImageView(fxImage);
+            imageView.setFitWidth(800);
+            imageView.setPreserveRatio(true);
             
-            Alert alert = new Alert(Alert.AlertType.INFORMATION);
-            alert.setTitle("Resident QR Code");
-            alert.setHeaderText(resident.getFirstName() + " " + resident.getLastName());
-            alert.getDialogPane().setContent(new StackPane(imageView));
-            alert.showAndWait();
+            Dialog<Void> dialog = new Dialog<>();
+            dialog.setTitle("Resident ID Card");
+            dialog.setHeaderText(resident.getLastName() + ", " + resident.getFirstName());
+            dialog.getDialogPane().setContent(new ScrollPane(imageView));
+            dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+            dialog.showAndWait();
         } catch (Exception e) {
             e.printStackTrace();
-            showAlert("Error", "Could not generate QR code.");
+            showAlert("Error", "Could not generate ID Card: " + e.getMessage());
         }
     }
 
@@ -1048,7 +1426,7 @@ public class App extends Application {
                     .ifPresent(r -> {
                         showResidentDialog(r).ifPresent(updated -> {
                             DatabaseHelper.updateResident(updated);
-                            if (pagination != null) loadResidentData();
+                            loadResidentData(false); // Maintain current page after update
                         });
                     });
             } catch (NumberFormatException e) {
@@ -1059,8 +1437,9 @@ public class App extends Application {
 
     private Node createPage(int pageIndex) {
         try {
-            String filter = (searchField != null) ? searchField.getText() : "";
-            System.out.println("Loading page " + pageIndex + " with filter: '" + filter + "'");
+            String searchText = (searchField != null) ? searchField.getText().trim() : "";
+            String filter = searchText.isEmpty() ? null : searchText;
+            System.out.println("Loading page " + pageIndex + " with filter: '" + (filter == null ? "null" : filter) + "'");
             
             ObservableList<Resident> residents = DatabaseHelper.getResidents(filter, pageIndex, ROWS_PER_PAGE, currentSortField, currentSortOrder);
             System.out.println("Fetched " + residents.size() + " residents for page " + pageIndex);
@@ -1077,24 +1456,6 @@ public class App extends Application {
             errorLabel.setStyle("-fx-text-fill: red; -fx-font-size: 12;");
             BorderPane errorContainer = new BorderPane(errorLabel);
             return errorContainer;
-        }
-    }
-
-    private void updatePagination() {
-        try {
-            String filter = (searchField != null) ? searchField.getText() : "";
-            int totalCount = DatabaseHelper.getResidentCount(filter);
-            int pageCount = (totalCount + ROWS_PER_PAGE - 1) / ROWS_PER_PAGE;
-            if (pageCount == 0) pageCount = 1;
-            
-            System.out.println("Total residents: " + totalCount + ", Page count: " + pageCount);
-            
-            pagination.setPageCount(pageCount);
-        } catch (Exception e) {
-            e.printStackTrace();
-            if (pagination != null) {
-                pagination.setPageCount(1);
-            }
         }
     }
 

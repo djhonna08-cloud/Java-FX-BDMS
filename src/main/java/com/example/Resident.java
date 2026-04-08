@@ -13,8 +13,13 @@ public class Resident {
     private final StringProperty birthDate;
     private final StringProperty gender;
     private final StringProperty address;
+    private final StringProperty photoPath;
 
     public Resident(int id, String firstName, String middleName, String lastName, String birthDate, String gender, String address) {
+        this(id, firstName, middleName, lastName, birthDate, gender, address, null);
+    }
+
+    public Resident(int id, String firstName, String middleName, String lastName, String birthDate, String gender, String address, String photoPath) {
         this.id = new SimpleIntegerProperty(id);
         this.firstName = new SimpleStringProperty(firstName);
         this.middleName = new SimpleStringProperty(middleName);
@@ -22,6 +27,7 @@ public class Resident {
         this.birthDate = new SimpleStringProperty(birthDate);
         this.gender = new SimpleStringProperty(gender);
         this.address = new SimpleStringProperty(address);
+        this.photoPath = new SimpleStringProperty(photoPath);
     }
 
     // Getters for property values
@@ -32,6 +38,7 @@ public class Resident {
     public String getBirthDate() { return birthDate.get(); }
     public String getGender() { return gender.get(); }
     public String getAddress() { return address.get(); }
+    public String getPhotoPath() { return photoPath.get(); }
 
     // Setters for property values
     public void setFirstName(String value) { firstName.set(value); }
@@ -40,6 +47,7 @@ public class Resident {
     public void setBirthDate(String value) { birthDate.set(value); }
     public void setGender(String value) { gender.set(value); }
     public void setAddress(String value) { address.set(value); }
+    public void setPhotoPath(String value) { photoPath.set(value); }
 
     // Getters for JavaFX properties (for TableView)
     public IntegerProperty idProperty() { return id; }
@@ -49,4 +57,5 @@ public class Resident {
     public StringProperty birthDateProperty() { return birthDate; }
     public StringProperty genderProperty() { return gender; }
     public StringProperty addressProperty() { return address; }
+    public StringProperty photoPathProperty() { return photoPath; }
 }
