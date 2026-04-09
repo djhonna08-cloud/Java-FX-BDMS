@@ -1084,4 +1084,81 @@ public class DatabaseHelper {
         }
         return Optional.empty();
     }
+
+    // ==================== FINANCIAL OPERATIONS ====================
+
+    public static Map<String, Double> getDailyCollections() {
+        Map<String, Double> collections = new java.util.LinkedHashMap<>();
+        String sql = "SELECT request_date, SUM(fee) as daily_total FROM document_requests " +
+                     "WHERE payment_status = 'PAID' AND request_date >= DATE_SUB(CURRENT_DATE, INTERVAL 7 DAY) " +
+                     "GROUP BY request_date ORDER BY request_date ASC";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            // Initialize last 7 days with 0 values
+            java.time.LocalDate today = java.time.LocalDate.now();
+            for (int i = 6; i >= 0; i--) {
+                java.time.LocalDate date = today.minusDays(i);
+                String dateStr = date.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+                collections.put(dateStr, 0.0);
+            }
+            
+            // Update with actual data from database
+            while (rs.next()) {
+                String date = rs.getString("request_date");
+                double amount = rs.getDouble("daily_total");
+                collections.put(date, amount);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            // If query fails, return empty collections for today
+            java.time.LocalDate today = java.time.LocalDate.now();
+            for (int i = 6; i >= 0; i--) {
+                java.time.LocalDate date = today.minusDays(i);
+                String dateStr = date.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+                collections.put(dateStr, 0.0);
+            }
+        }
+        return collections;
+    }
+
+    public static Map<String, Double> getMonthlyIncome() {
+        Map<String, Double> income = new java.util.LinkedHashMap<>();
+        String sql = "SELECT YEAR(request_date) as year, MONTH(request_date) as month, SUM(fee) as monthly_total " +
+                     "FROM document_requests " +
+                     "WHERE payment_status = 'PAID' AND request_date >= DATE_SUB(CURRENT_DATE, INTERVAL 12 MONTH) " +
+                     "GROUP BY YEAR(request_date), MONTH(request_date) ORDER BY year ASC, month ASC";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            // Initialize last 12 months with 0 values
+            java.time.LocalDate today = java.time.LocalDate.now();
+            for (int i = 11; i >= 0; i--) {
+                java.time.LocalDate date = today.minusMonths(i);
+                String monthYear = date.format(java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy"));
+                income.put(monthYear, 0.0);
+            }
+            
+            // Update with actual data from database
+            while (rs.next()) {
+                int year = rs.getInt("year");
+                int month = rs.getInt("month");
+                double amount = rs.getDouble("monthly_total");
+                
+                java.time.LocalDate date = java.time.LocalDate.of(year, month, 1);
+                String monthYear = date.format(java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy"));
+                income.put(monthYear, amount);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            // If query fails, return empty income for last 12 months
+            java.time.LocalDate today = java.time.LocalDate.now();
+            for (int i = 11; i >= 0; i--) {
+                java.time.LocalDate date = today.minusMonths(i);
+                String monthYear = date.format(java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy"));
+                income.put(monthYear, 0.0);
+            }
+        }
+        return income;
+    }
 }

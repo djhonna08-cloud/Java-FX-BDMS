@@ -433,6 +433,8 @@ public class App extends Application {
         complaintsBtn.setUserData("complaints");
         var announcementsBtn = createSidebarButton("Announcement Portal", FontAwesomeSolid.BELL);
         announcementsBtn.setUserData("announcements");
+        var financialBtn = createSidebarButton("Financial Reports", FontAwesomeSolid.CHART_LINE);
+        financialBtn.setUserData("financial");
         var systemBtn = createSidebarButton("System Config", FontAwesomeSolid.COGS);
         systemBtn.setUserData("system");
         var maintenanceBtn = createSidebarButton("Maintenance", FontAwesomeSolid.SHIELD_ALT);
@@ -478,7 +480,7 @@ public class App extends Application {
         });
 
         // Add navigation items to sidebar
-        navMenu.getChildren().addAll(overviewBtn, userSubmenu, residentBtn, certificatesBtn, complaintsBtn, announcementsBtn, systemBtn, maintenanceBtn, themeRow, logoutBtn);
+        navMenu.getChildren().addAll(overviewBtn, userSubmenu, residentBtn, certificatesBtn, complaintsBtn, announcementsBtn, financialBtn, systemBtn, maintenanceBtn, themeRow, logoutBtn);
 
         // Restore last active section (if any)
         if ("users".equals(activeSection)) {
@@ -504,6 +506,8 @@ public class App extends Application {
             setActiveNav(complaintsBtn);
         } else if ("announcements".equals(activeSection)) {
             setActiveNav(announcementsBtn);
+        } else if ("financial".equals(activeSection)) {
+            setActiveNav(financialBtn);
         } else if ("system".equals(activeSection)) {
             setActiveNav(systemBtn);
         } else if ("maintenance".equals(activeSection)) {
@@ -537,6 +541,10 @@ public class App extends Application {
         announcementsBtn.setOnAction(e -> {
             setActiveNav(announcementsBtn);
             showAnnouncementsPortal(center);
+        });
+        financialBtn.setOnAction(e -> {
+            setActiveNav(financialBtn);
+            showFinancialReports(center);
         });
         systemBtn.setOnAction(e -> {
             setActiveNav(systemBtn);
@@ -2916,6 +2924,180 @@ public class App extends Application {
             });
         } else {
             System.out.println("Announcements table is null, cannot refresh");
+        }
+    }
+
+    private void showFinancialReports(VBox center) {
+        var container = new VBox(15);
+        container.setPadding(new Insets(15));
+        container.setStyle("-fx-background-color: " + (darkMode ? "#1e1e1e" : "#ffffff") + ";");
+
+        var titleLabel = new Label("Financial Reports");
+        titleLabel.setStyle("-fx-font-size: 16; -fx-font-weight: bold;");
+
+        // Fetch real data from database
+        var dailyCollections = DatabaseHelper.getDailyCollections();
+        var monthlyIncome = DatabaseHelper.getMonthlyIncome();
+
+        // Daily Collections Section
+        var dailySection = new VBox(10);
+        var dailyTitle = new Label("Daily Collections");
+        dailyTitle.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + (darkMode ? "#ffffff" : "#1a1a1a") + ";");
+
+        var dailyTable = new TableView<Map.Entry<String, Double>>();
+        dailyTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        dailyTable.setPrefHeight(200);
+
+        TableColumn<Map.Entry<String, Double>, String> dateCol = new TableColumn<>("Date");
+        dateCol.setCellValueFactory(cellData -> new javafx.beans.property.SimpleStringProperty(cellData.getValue().getKey()));
+        dateCol.setPrefWidth(150);
+
+        TableColumn<Map.Entry<String, Double>, String> amountCol = new TableColumn<>("Amount");
+        amountCol.setCellValueFactory(cellData -> new javafx.beans.property.SimpleStringProperty("₱" + String.format("%.2f", cellData.getValue().getValue())));
+        amountCol.setPrefWidth(150);
+
+        dailyTable.getColumns().addAll(dateCol, amountCol);
+        dailyTable.setItems(FXCollections.observableArrayList(dailyCollections.entrySet()));
+
+        var dailyTotal = new Label("Total Daily Collections: ₱" + String.format("%.2f", dailyCollections.values().stream().mapToDouble(Double::doubleValue).sum()));
+        dailyTotal.setStyle("-fx-font-size: 12; -fx-font-weight: bold; -fx-text-fill: #10b981;");
+
+        dailySection.getChildren().addAll(dailyTitle, dailyTable, dailyTotal);
+
+        // Monthly Income Section
+        var monthlySection = new VBox(10);
+        var monthlyTitle = new Label("Monthly Income");
+        monthlyTitle.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + (darkMode ? "#ffffff" : "#1a1a1a") + ";");
+
+        var monthlyTable = new TableView<Map.Entry<String, Double>>();
+        monthlyTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        monthlyTable.setPrefHeight(200);
+
+        TableColumn<Map.Entry<String, Double>, String> monthCol = new TableColumn<>("Month");
+        monthCol.setCellValueFactory(cellData -> new javafx.beans.property.SimpleStringProperty(cellData.getValue().getKey()));
+        monthCol.setPrefWidth(150);
+
+        TableColumn<Map.Entry<String, Double>, String> monthlyAmountCol = new TableColumn<>("Income");
+        monthlyAmountCol.setCellValueFactory(cellData -> new javafx.beans.property.SimpleStringProperty("₱" + String.format("%.2f", cellData.getValue().getValue())));
+        monthlyAmountCol.setPrefWidth(150);
+
+        monthlyTable.getColumns().addAll(monthCol, monthlyAmountCol);
+        monthlyTable.setItems(FXCollections.observableArrayList(monthlyIncome.entrySet()));
+
+        var monthlyTotal = new Label("Total Monthly Income: ₱" + String.format("%.2f", monthlyIncome.values().stream().mapToDouble(Double::doubleValue).sum()));
+        monthlyTotal.setStyle("-fx-font-size: 12; -fx-font-weight: bold; -fx-text-fill: #3b82f6;");
+
+        monthlySection.getChildren().addAll(monthlyTitle, monthlyTable, monthlyTotal);
+
+        // Action Buttons
+        var buttonBox = new HBox(10);
+        buttonBox.setPadding(new Insets(15, 0, 0, 0));
+
+        var printDailyBtn = new Button("Print Daily Report", new FontIcon(FontAwesomeSolid.PRINT));
+        printDailyBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
+        printDailyBtn.setOnAction(e -> generateFinancialReportPDF("daily", dailyCollections));
+
+        var printMonthlyBtn = new Button("Print Monthly Report", new FontIcon(FontAwesomeSolid.PRINT));
+        printMonthlyBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
+        printMonthlyBtn.setOnAction(e -> generateFinancialReportPDF("monthly", monthlyIncome));
+
+        var exportBtn = new Button("Export to CSV", new FontIcon(FontAwesomeSolid.FILE_CSV));
+        exportBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
+        exportBtn.setOnAction(e -> exportFinancialDataToCSV(dailyCollections, monthlyIncome));
+
+        buttonBox.getChildren().addAll(printDailyBtn, printMonthlyBtn, exportBtn);
+
+        var scrollPane = new ScrollPane(new VBox(20, dailySection, monthlySection));
+        scrollPane.setFitToWidth(true);
+
+        container.getChildren().addAll(titleLabel, scrollPane, buttonBox);
+        VBox.setVgrow(scrollPane, Priority.ALWAYS);
+
+        updateDashboardContent(center, "Financial Reports", container);
+    }
+
+    private void generateFinancialReportPDF(String type, Map<String, Double> data) {
+        try {
+            String filename = "Financial_Report_" + type + "_" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + ".pdf";
+            String path = System.getProperty("user.home") + "/Downloads/" + filename;
+
+            Document document = new Document();
+            PdfWriter.getInstance(document, new FileOutputStream(path));
+            document.open();
+
+            // Header
+            com.lowagie.text.Font titleFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 14, com.lowagie.text.Font.BOLD);
+            Paragraph title = new Paragraph("BARANGAY SAN MARINO - FINANCIAL REPORT", titleFont);
+            title.setAlignment(com.lowagie.text.Element.ALIGN_CENTER);
+            document.add(title);
+
+            String reportType = "daily".equals(type) ? "Daily Collections" : "Monthly Income";
+            document.add(new Paragraph("\nReport Type: " + reportType));
+            document.add(new Paragraph("Generated: " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))));
+            document.add(new Paragraph("\n"));
+
+            // Summary
+            double total = data.values().stream().mapToDouble(Double::doubleValue).sum();
+            double average = total / data.size();
+            com.lowagie.text.Font labelFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 11, com.lowagie.text.Font.BOLD);
+
+            document.add(new Paragraph("Summary:", labelFont));
+            document.add(new Paragraph("Total: ₱" + String.format("%.2f", total)));
+            document.add(new Paragraph("Average: ₱" + String.format("%.2f", average)));
+            document.add(new Paragraph("Entries: " + data.size()));
+            document.add(new Paragraph("\n"));
+
+            // Detailed Table
+            com.lowagie.text.pdf.PdfPTable table = new com.lowagie.text.pdf.PdfPTable(2);
+            table.setWidthPercentage(100);
+            table.addCell("Date/Month");
+            table.addCell("Amount (₱)");
+
+            for (Map.Entry<String, Double> entry : data.entrySet()) {
+                table.addCell(entry.getKey());
+                table.addCell(String.format("%.2f", entry.getValue()));
+            }
+
+            document.add(table);
+            document.close();
+
+            showToast("Report saved to: " + path);
+        } catch (Exception e) {
+            e.printStackTrace();
+            showToast("Error generating report");
+        }
+    }
+
+    private void exportFinancialDataToCSV(Map<String, Double> daily, Map<String, Double> monthly) {
+        try {
+            String filename = "Financial_Data_" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + ".csv";
+            String path = System.getProperty("user.home") + "/Downloads/" + filename;
+
+            StringBuilder csv = new StringBuilder();
+            csv.append("BARANGAY SAN MARINO - FINANCIAL DATA EXPORT\n");
+            csv.append("Generated: ").append(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))).append("\n\n");
+
+            // Daily Collections
+            csv.append("DAILY COLLECTIONS\n");
+            csv.append("Date,Amount\n");
+            for (Map.Entry<String, Double> entry : daily.entrySet()) {
+                csv.append(entry.getKey()).append(",").append(String.format("%.2f", entry.getValue())).append("\n");
+            }
+            csv.append("Total,").append(String.format("%.2f", daily.values().stream().mapToDouble(Double::doubleValue).sum())).append("\n\n");
+
+            // Monthly Income
+            csv.append("MONTHLY INCOME\n");
+            csv.append("Month,Income\n");
+            for (Map.Entry<String, Double> entry : monthly.entrySet()) {
+                csv.append(entry.getKey()).append(",").append(String.format("%.2f", entry.getValue())).append("\n");
+            }
+            csv.append("Total,").append(String.format("%.2f", monthly.values().stream().mapToDouble(Double::doubleValue).sum())).append("\n");
+
+            Files.writeString(Path.of(path), csv.toString());
+            showToast("Data exported to: " + path);
+        } catch (Exception e) {
+            e.printStackTrace();
+            showToast("Error exporting data");
         }
     }
 
