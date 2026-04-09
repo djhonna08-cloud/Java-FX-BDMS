@@ -67,6 +67,8 @@ import javafx.beans.binding.Bindings;
 public class App extends Application {
     private TableView<Resident> residentTable;
     private TableView<DocumentRequest> documentRequestsTable;
+    private TableView<Complaint> complaintsTable;
+    private TableView<Announcement> announcementsTable;
     private TextField searchField; // Promoted to class level for access in other methods
     private Pagination pagination;
     private static final int ROWS_PER_PAGE = 15;
@@ -98,6 +100,13 @@ public class App extends Application {
     // Last selected view (used when rebuilding UI on theme toggle)
     private String activeSection = "overview";
     private String activeSubmenuItem = null;
+
+    // Current logged-in user info
+    private String currentUsername = "";
+    @SuppressWarnings("unused") // Kept for future role-based UI customization
+    private String currentRole = "";
+    private int currentResidentId = 0;
+    private String currentResidentName = "";
 
     @Override
     public void start(Stage stage) {
@@ -287,6 +296,34 @@ public class App extends Application {
     }
 
     private Scene createDashboardScene(String username, String role, Map<String, String> permissions) {
+        // Store current user info for use throughout the dashboard
+        this.currentUsername = username;
+        this.currentRole = role;
+        
+        // Try to find the resident ID for the current user
+        // First, try to find a resident matching the username
+        ObservableList<Resident> residents = DatabaseHelper.getResidents(username, 0, 10, "last_name", "ASC");
+        
+        if (!residents.isEmpty()) {
+            this.currentResidentId = residents.get(0).getId();
+            this.currentResidentName = residents.get(0).getLastName() + ", " + residents.get(0).getFirstName();
+        } else {
+            // Fallback: use first resident in system
+            residents = DatabaseHelper.getResidents(null, 0, 1, "last_name", "ASC");
+            if (!residents.isEmpty()) {
+                this.currentResidentId = residents.get(0).getId();
+                this.currentResidentName = residents.get(0).getLastName() + ", " + residents.get(0).getFirstName();
+            } else {
+                // No residents at all, use defaults
+                this.currentResidentId = 1;
+                this.currentResidentName = username;
+            }
+        }
+        
+        System.out.println("Dashboard loaded for user: " + username);
+        System.out.println("Current Resident ID: " + currentResidentId);
+        System.out.println("Current Resident Name: " + currentResidentName);
+        
         var root = new BorderPane();
         root.getStyleClass().add("root");
 
@@ -392,6 +429,10 @@ public class App extends Application {
         residentBtn.setUserData("resident");
         var certificatesBtn = createSidebarButton("Certificates & Clearances", FontAwesomeSolid.FILE_PDF);
         certificatesBtn.setUserData("certificates");
+        var complaintsBtn = createSidebarButton("Complaints & Incidents", FontAwesomeSolid.EXCLAMATION_CIRCLE);
+        complaintsBtn.setUserData("complaints");
+        var announcementsBtn = createSidebarButton("Announcement Portal", FontAwesomeSolid.BELL);
+        announcementsBtn.setUserData("announcements");
         var systemBtn = createSidebarButton("System Config", FontAwesomeSolid.COGS);
         systemBtn.setUserData("system");
         var maintenanceBtn = createSidebarButton("Maintenance", FontAwesomeSolid.SHIELD_ALT);
@@ -437,7 +478,7 @@ public class App extends Application {
         });
 
         // Add navigation items to sidebar
-        navMenu.getChildren().addAll(overviewBtn, userSubmenu, residentBtn, certificatesBtn, systemBtn, maintenanceBtn, themeRow, logoutBtn);
+        navMenu.getChildren().addAll(overviewBtn, userSubmenu, residentBtn, certificatesBtn, complaintsBtn, announcementsBtn, systemBtn, maintenanceBtn, themeRow, logoutBtn);
 
         // Restore last active section (if any)
         if ("users".equals(activeSection)) {
@@ -459,6 +500,10 @@ public class App extends Application {
             setActiveNav(residentBtn);
         } else if ("certificates".equals(activeSection)) {
             setActiveNav(certificatesBtn);
+        } else if ("complaints".equals(activeSection)) {
+            setActiveNav(complaintsBtn);
+        } else if ("announcements".equals(activeSection)) {
+            setActiveNav(announcementsBtn);
         } else if ("system".equals(activeSection)) {
             setActiveNav(systemBtn);
         } else if ("maintenance".equals(activeSection)) {
@@ -484,6 +529,14 @@ public class App extends Application {
         certificatesBtn.setOnAction(e -> {
             setActiveNav(certificatesBtn);
             showCertificatesAndClearances(center);
+        });
+        complaintsBtn.setOnAction(e -> {
+            setActiveNav(complaintsBtn);
+            showComplaintsAndIncidents(center);
+        });
+        announcementsBtn.setOnAction(e -> {
+            setActiveNav(announcementsBtn);
+            showAnnouncementsPortal(center);
         });
         systemBtn.setOnAction(e -> {
             setActiveNav(systemBtn);
@@ -654,7 +707,17 @@ public class App extends Application {
         var clearanceCard = createStatCard("Pending Clearances", "0", "#f43f5e");
         var casesCard = createStatCard("Active Cases", "0", "#3b82f6");
         
-        var statsGrid = new FlowPane(16, 16, populationCard, revenueCard, clearanceCard, casesCard);
+        // Get announcement counts by type
+        ObservableList<Announcement> allAnnouncements = DatabaseHelper.getAllAnnouncements();
+        long eventCount = allAnnouncements.stream().filter(a -> "Event".equals(a.getType())).count();
+        long alertCount = allAnnouncements.stream().filter(a -> "Emergency Alert".equals(a.getType())).count();
+        long programCount = allAnnouncements.stream().filter(a -> "Program".equals(a.getType())).count();
+        
+        var eventsCard = createStatCard("Events", String.valueOf(eventCount), "#10b981");
+        var alertsCard = createStatCard("Emergency Alerts", String.valueOf(alertCount), "#ef4444");
+        var programsCard = createStatCard("Programs", String.valueOf(programCount), "#8b5cf6");
+        
+        var statsGrid = new FlowPane(16, 16, populationCard, revenueCard, clearanceCard, casesCard, eventsCard, alertsCard, programsCard);
         
         var recentActivity = new VBox(12);
         var actTitle = new Label("Recent Activity");
@@ -682,7 +745,64 @@ public class App extends Application {
         HBox.setHgrow(genderDistributionChart, Priority.ALWAYS);
         HBox.setHgrow(recentActivity, Priority.ALWAYS);
 
-        var content = new VBox(24, statsGrid, bottomRow);
+        // Announcements section
+        var announcementsSection = new VBox(12);
+        var announcementsTitle = new Label("Recent Announcements");
+        announcementsTitle.setStyle("-fx-text-fill: " + (darkMode ? "#ffffff" : "#1a1a1a") + "; -fx-font-size: 14; -fx-font-weight: bold;");
+        announcementsSection.getChildren().add(announcementsTitle);
+
+        // Display latest 5 announcements
+        allAnnouncements.stream()
+            .limit(5)
+            .forEach(announcement -> {
+                var announcementItem = new HBox(12);
+                announcementItem.setPadding(new Insets(10));
+                announcementItem.setStyle("-fx-background-color: " + (darkMode ? "#1e1e1e" : "#f9fafb") + "; -fx-border-color: " + (darkMode ? "#333" : "#e5e7eb") + "; -fx-border-width: 1; -fx-border-radius: 4;");
+                announcementItem.setAlignment(Pos.TOP_LEFT);
+
+                // Type badge with color
+                var typeBadge = new Label(announcement.getType());
+                String typeColor = switch (announcement.getType()) {
+                    case "Event" -> "#10b981";
+                    case "Emergency Alert" -> "#ef4444";
+                    case "Program" -> "#8b5cf6";
+                    default -> "#6b7280";
+                };
+                typeBadge.setStyle("-fx-background-color: " + typeColor + "; -fx-text-fill: white; -fx-padding: 3 8; -fx-border-radius: 4; -fx-font-size: 10; -fx-font-weight: bold;");
+                typeBadge.setPrefWidth(80);
+
+                // Announcement details
+                var details = new VBox(4);
+                var title = new Label(announcement.getTitle());
+                title.setStyle("-fx-text-fill: " + (darkMode ? "#ffffff" : "#1a1a1a") + "; -fx-font-size: 12; -fx-font-weight: bold;");
+                title.setWrapText(true);
+
+                var content = new Label(announcement.getContent().length() > 60 ? 
+                    announcement.getContent().substring(0, 60) + "..." : 
+                    announcement.getContent());
+                content.setStyle("-fx-text-fill: " + (darkMode ? "#b0b0b0" : "#666") + "; -fx-font-size: 10;");
+                content.setWrapText(true);
+
+                var meta = new Label("Posted by " + announcement.getPostedBy() + " on " + announcement.getPostedDate() + " | Status: " + announcement.getStatus());
+                meta.setStyle("-fx-text-fill: " + (darkMode ? "#808080" : "#999") + "; -fx-font-size: 9;");
+
+                details.getChildren().addAll(title, content, meta);
+                announcementItem.getChildren().addAll(typeBadge, details);
+                HBox.setHgrow(details, Priority.ALWAYS);
+
+                announcementsSection.getChildren().add(announcementItem);
+            });
+
+        if (allAnnouncements.isEmpty()) {
+            var noAnnouncements = new Label("No announcements yet");
+            noAnnouncements.setStyle("-fx-text-fill: " + (darkMode ? "#808080" : "#999") + "; -fx-font-style: italic;");
+            announcementsSection.getChildren().add(noAnnouncements);
+        }
+
+        var middleRow = new HBox(24, bottomRow);
+        HBox.setHgrow(bottomRow, Priority.ALWAYS);
+
+        var content = new VBox(24, statsGrid, middleRow, announcementsSection);
         updateDashboardContent(center, "Analytics & Overview", content);
     }
 
@@ -2044,6 +2164,759 @@ public class App extends Application {
         var box = new VBox(10, heading, content);
         box.getStyleClass().add("content-box");
         return box;
+    }
+
+    // ==================== COMPLAINT MANAGEMENT ====================
+
+    private void showComplaintsAndIncidents(VBox center) {
+        // Create the complaints table ONCE upfront so both tabs can share it
+        complaintsTable = new TableView<>();
+        complaintsTable.getStyleClass().add("table-view");
+
+        TableColumn<Complaint, String> residentCol = new TableColumn<>("Resident");
+        residentCol.setCellValueFactory(new PropertyValueFactory<>("residentName"));
+        residentCol.setPrefWidth(150);
+
+        TableColumn<Complaint, String> titleCol = new TableColumn<>("Complaint Title");
+        titleCol.setCellValueFactory(new PropertyValueFactory<>("title"));
+        titleCol.setPrefWidth(200);
+
+        TableColumn<Complaint, String> statusCol = new TableColumn<>("Status");
+        statusCol.setCellValueFactory(new PropertyValueFactory<>("status"));
+        statusCol.setPrefWidth(100);
+
+        TableColumn<Complaint, String> submittedCol = new TableColumn<>("Date Submitted");
+        submittedCol.setCellValueFactory(new PropertyValueFactory<>("dateSubmitted"));
+        submittedCol.setPrefWidth(140);
+
+        TableColumn<Complaint, String> assignedCol = new TableColumn<>("Assigned To");
+        assignedCol.setCellValueFactory(new PropertyValueFactory<>("assignedTo"));
+        assignedCol.setPrefWidth(120);
+
+        complaintsTable.getColumns().setAll(List.of(residentCol, titleCol, statusCol, submittedCol, assignedCol));
+
+        // Load initial data
+        ObservableList<Complaint> complaints = DatabaseHelper.getAllComplaints();
+        complaintsTable.setItems(complaints);
+
+        // Two tabs: Submit complaint and manage complaints
+        TabPane tabPane = new TabPane();
+        tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+
+        // Tab 1: Submit New Complaint (for residents)
+        Tab submitTab = new Tab("Submit Complaint", createComplaintSubmissionPanel());
+        submitTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+
+        // Tab 2: Manage Complaints (for admin)
+        Tab manageTab = new Tab("Manage Complaints", createComplaintsManagementPanel());
+        manageTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+
+        tabPane.getTabs().addAll(submitTab, manageTab);
+        updateDashboardContent(center, "Complaints & Incidents", tabPane);
+    }
+
+    private VBox createComplaintSubmissionPanel() {
+        VBox panel = new VBox(15);
+        panel.setPadding(new Insets(20));
+
+        Label titleLabel = new Label("Submit a Complaint or Incident Report");
+        titleLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + (darkMode ? "#ffffff" : "#1a1a1a") + ";");
+
+        // Complaint Title
+        Label complaintTitleLabel = new Label("Complaint Title");
+        complaintTitleLabel.setStyle("-fx-text-fill: " + (darkMode ? "#d0d0d0" : "#333") + ";");
+        TextField titleField = new TextField();
+        titleField.setPromptText("E.g., Noise complaint, street damage, etc.");
+        titleField.setStyle("-fx-font-size: 12;");
+
+        // Description
+        Label descriptionLabel = new Label("Description of Incident");
+        descriptionLabel.setStyle("-fx-text-fill: " + (darkMode ? "#d0d0d0" : "#333") + ";");
+        TextArea descriptionArea = new TextArea();
+        descriptionArea.setPromptText("Provide detailed information about the complaint or incident...");
+        descriptionArea.setWrapText(true);
+        descriptionArea.setPrefRowCount(6);
+
+        // Photo Upload
+        Label photoLabel = new Label("Attach Evidence Photo (Optional)");
+        photoLabel.setStyle("-fx-text-fill: " + (darkMode ? "#d0d0d0" : "#333") + ";");
+
+        java.util.concurrent.atomic.AtomicReference<String> selectedPhotoPath = new java.util.concurrent.atomic.AtomicReference<>(null);
+        Label photoPathLabel = new Label("No photo selected");
+        photoPathLabel.setStyle("-fx-text-fill: " + (darkMode ? "#b0b0b0" : "#666") + "; -fx-font-size: 11;");
+
+        Button uploadPhotoBtn = new Button("Choose Photo", new FontIcon(FontAwesomeSolid.IMAGE));
+        uploadPhotoBtn.getStyleClass().add("button-secondary");
+        uploadPhotoBtn.setOnAction(e -> {
+            FileChooser fileChooser = new FileChooser();
+            fileChooser.setTitle("Select Complaint Photo");
+            fileChooser.getExtensionFilters().addAll(
+                new FileChooser.ExtensionFilter("Image Files", "*.png", "*.jpg", "*.jpeg", "*.gif")
+            );
+            File file = fileChooser.showOpenDialog(primaryStage);
+            if (file != null) {
+                selectedPhotoPath.set(file.getAbsolutePath());
+                photoPathLabel.setText("✓ " + file.getName());
+            }
+        });
+
+        HBox photoBox = new HBox(10, uploadPhotoBtn, photoPathLabel);
+        photoBox.setAlignment(Pos.CENTER_LEFT);
+
+        // Submit Button
+        Button submitBtn = new Button("Submit Complaint");
+        submitBtn.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+        submitBtn.getStyleClass().add("button-primary");
+        submitBtn.setDisable(true);
+
+        // Enable button only when title and description are filled
+        titleField.textProperty().addListener((obs, oldVal, newVal) ->
+            submitBtn.setDisable(newVal.trim().isEmpty() || descriptionArea.getText().trim().isEmpty())
+        );
+        descriptionArea.textProperty().addListener((obs, oldVal, newVal) ->
+            submitBtn.setDisable(titleField.getText().trim().isEmpty() || newVal.trim().isEmpty())
+        );
+
+        submitBtn.setOnAction(e -> {
+            String title = titleField.getText().trim();
+            String description = descriptionArea.getText().trim();
+            String photoPath = selectedPhotoPath.get();
+
+            try {
+                System.out.println("=== Submitting Complaint ===");
+                System.out.println("Current Resident ID: " + currentResidentId);
+                System.out.println("Current Resident Name: " + currentResidentName);
+                System.out.println("Title: " + title);
+                System.out.println("Description: " + description);
+                System.out.println("Photo: " + photoPath);
+                
+                // Use current logged-in user info
+                Complaint complaint = new Complaint(currentResidentId, currentResidentName, title, description, photoPath);
+                System.out.println("Complaint object created");
+                
+                int complaintId = DatabaseHelper.createComplaint(complaint);
+                System.out.println("Created complaint with ID: " + complaintId);
+
+                if (complaintId > 0) {
+                    System.out.println("Success! Refreshing table...");
+                    showToast("Complaint submitted successfully! Reference #: " + complaintId);
+                    titleField.clear();
+                    descriptionArea.clear();
+                    selectedPhotoPath.set(null);
+                    photoPathLabel.setText("No photo selected");
+                    
+                    // Refresh the management table in real-time if it exists
+                    refreshComplaintsTable();
+                } else {
+                    System.out.println("Failed to create complaint (ID was " + complaintId + ")");
+                    showToast("Failed to submit complaint.");
+                }
+            } catch (Exception ex) {
+                System.err.println("Exception during complaint submission: " + ex.getMessage());
+                ex.printStackTrace();
+                showToast("Error submitting complaint: " + ex.getMessage());
+            }
+        });
+
+        panel.getChildren().addAll(
+            titleLabel,
+            new Separator(),
+            complaintTitleLabel, titleField,
+            new Separator(),
+            descriptionLabel, descriptionArea,
+            new Separator(),
+            photoLabel, photoBox,
+            submitBtn
+        );
+
+        ScrollPane scrollPane = new ScrollPane(panel);
+        scrollPane.setFitToWidth(true);
+
+        VBox container = new VBox(scrollPane);
+        VBox.setVgrow(scrollPane, Priority.ALWAYS);
+        return container;
+    }
+
+    private VBox createComplaintsManagementPanel() {
+        VBox container = new VBox(10);
+        container.setPadding(new Insets(10));
+
+        // The complaintsTable is already created in showComplaintsAndIncidents()
+
+        // Buttons
+        Button viewBtn = new Button("View Details", new FontIcon(FontAwesomeSolid.EYE));
+        viewBtn.setDisable(true);
+        viewBtn.setOnAction(e -> {
+            Complaint selected = complaintsTable.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                showComplaintDetailsDialog(selected);
+            }
+        });
+
+        Button statusBtn = new Button("Update Status", new FontIcon(FontAwesomeSolid.EDIT));
+        statusBtn.setDisable(true);
+        statusBtn.setOnAction(e -> {
+            Complaint selected = complaintsTable.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                showStatusUpdateDialog(selected);
+            }
+        });
+
+        Button notesBtn = new Button("Add Notes", new FontIcon(FontAwesomeSolid.COMMENT));
+        notesBtn.setDisable(true);
+        notesBtn.setOnAction(e -> {
+            Complaint selected = complaintsTable.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                showAddNotesDialog(selected);
+            }
+        });
+
+        Button reportBtn = new Button("Generate Report", new FontIcon(FontAwesomeSolid.FILE_PDF));
+        reportBtn.setOnAction(e -> generateComplaintsReport());
+
+        complaintsTable.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+            boolean isSelected = newVal != null;
+            viewBtn.setDisable(!isSelected);
+            statusBtn.setDisable(!isSelected);
+            notesBtn.setDisable(!isSelected);
+        });
+
+        ToolBar toolBar = new ToolBar(viewBtn, statusBtn, notesBtn, new Separator(), reportBtn);
+        toolBar.setStyle("-fx-background-color: transparent; -fx-padding: 0;");
+
+        container.getChildren().addAll(toolBar, complaintsTable);
+        VBox.setVgrow(complaintsTable, Priority.ALWAYS);
+        return container;
+    }
+
+    private void showComplaintDetailsDialog(Complaint complaint) {
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("Complaint Details - ID #" + complaint.getId());
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(15);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(20));
+
+        Label residentLabel = new Label("Resident:");
+        Label residentValue = new Label(complaint.getResidentName());
+        residentValue.setStyle("-fx-font-weight: bold;");
+
+        Label titleLabel = new Label("Title:");
+        Label titleValue = new Label(complaint.getTitle());
+        titleValue.setStyle("-fx-font-weight: bold;");
+
+        Label statusLabel = new Label("Status:");
+        Label statusValue = new Label(complaint.getStatus());
+        statusValue.setStyle("-fx-font-weight: bold;");
+
+        Label descriptionLabel = new Label("Description:");
+        TextArea descriptionArea = new TextArea(complaint.getDescription());
+        descriptionArea.setWrapText(true);
+        descriptionArea.setEditable(false);
+        descriptionArea.setPrefRowCount(5);
+
+        Label notesLabel = new Label("Admin Notes:");
+        TextArea notesArea = new TextArea(complaint.getAdminNotes());
+        notesArea.setWrapText(true);
+        notesArea.setEditable(false);
+        notesArea.setPrefRowCount(4);
+
+        Label dateLabel = new Label("Date Submitted:");
+        Label dateValue = new Label(complaint.getDateSubmitted());
+
+        grid.add(residentLabel, 0, 0);
+        grid.add(residentValue, 1, 0);
+        grid.add(titleLabel, 0, 1);
+        grid.add(titleValue, 1, 1);
+        grid.add(statusLabel, 0, 2);
+        grid.add(statusValue, 1, 2);
+        grid.add(dateLabel, 0, 3);
+        grid.add(dateValue, 1, 3);
+        grid.add(descriptionLabel, 0, 4);
+        grid.add(descriptionArea, 1, 4);
+        grid.add(notesLabel, 0, 5);
+        grid.add(notesArea, 1, 5);
+
+        dialog.getDialogPane().setContent(grid);
+        dialog.showAndWait();
+    }
+
+    private void showStatusUpdateDialog(Complaint complaint) {
+        Dialog<String> dialog = new Dialog<>();
+        dialog.setTitle("Update Complaint Status");
+        dialog.setHeaderText("Update the status for complaint: " + complaint.getTitle());
+
+        ButtonType updateButtonType = new ButtonType("Update", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(updateButtonType, ButtonType.CANCEL);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(20));
+
+        Label statusLabel = new Label("New Status:");
+        ComboBox<String> statusCombo = new ComboBox<>();
+        statusCombo.setItems(FXCollections.observableArrayList("Pending", "Ongoing", "Resolved"));
+        statusCombo.setValue(complaint.getStatus());
+
+        grid.add(statusLabel, 0, 0);
+        grid.add(statusCombo, 1, 0);
+
+        dialog.getDialogPane().setContent(grid);
+        dialog.setResultConverter(dialogButton -> {
+            if (dialogButton == updateButtonType) {
+                return statusCombo.getValue();
+            }
+            return null;
+        });
+
+        dialog.showAndWait().ifPresent(newStatus -> {
+            DatabaseHelper.updateComplaintStatus(complaint.getId(), newStatus);
+            complaint.setStatus(newStatus);
+            showToast("Complaint status updated to: " + newStatus);
+            refreshComplaintsTable();
+        });
+    }
+
+    private void showAddNotesDialog(Complaint complaint) {
+        Dialog<java.util.AbstractMap.SimpleEntry<String, String>> dialog = new Dialog<>();
+        dialog.setTitle("Add/Update Complaint Notes");
+        dialog.setHeaderText("Add notes for complaint: " + complaint.getTitle());
+
+        ButtonType saveButtonType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(20));
+
+        Label notesLabel = new Label("Notes:");
+        TextArea notesArea = new TextArea(complaint.getAdminNotes());
+        notesArea.setWrapText(true);
+        notesArea.setPrefRowCount(5);
+
+        Label assignedLabel = new Label("Assigned To:");
+        TextField assignedField = new TextField(complaint.getAssignedTo());
+
+        grid.add(notesLabel, 0, 0);
+        grid.add(notesArea, 1, 0);
+        grid.add(assignedLabel, 0, 1);
+        grid.add(assignedField, 1, 1);
+
+        dialog.getDialogPane().setContent(grid);
+        dialog.setResultConverter(dialogButton -> {
+            if (dialogButton == saveButtonType) {
+                return new java.util.AbstractMap.SimpleEntry<>(notesArea.getText(), assignedField.getText());
+            }
+            return null;
+        });
+
+        dialog.showAndWait().ifPresent(result -> {
+            DatabaseHelper.updateComplaintNotes(complaint.getId(), result.getKey(), result.getValue());
+            complaint.setAdminNotes(result.getKey());
+            complaint.setAssignedTo(result.getValue());
+            showToast("Complaint notes updated!");
+            refreshComplaintsTable();
+        });
+    }
+
+    private void refreshComplaintsTable() {
+        if (complaintsTable != null) {
+            System.out.println("Refreshing complaints table...");
+            Platform.runLater(() -> {
+                ObservableList<Complaint> complaints = DatabaseHelper.getAllComplaints();
+                System.out.println("Loaded " + complaints.size() + " complaints");
+                complaintsTable.setItems(complaints);
+            });
+        } else {
+            System.out.println("Complaints table is null, cannot refresh");
+        }
+    }
+
+    private void generateComplaintsReport() {
+        try {
+            ObservableList<Complaint> complaints = DatabaseHelper.getAllComplaints();
+            String filename = "Complaints_Report_" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + ".pdf";
+            String path = System.getProperty("user.home") + "/Downloads/" + filename;
+
+            Document document = new Document();
+            PdfWriter.getInstance(document, new FileOutputStream(path));
+            document.open();
+
+            // Header
+            com.lowagie.text.Font titleFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 14, com.lowagie.text.Font.BOLD);
+            Paragraph title = new Paragraph("Complaints & Incidents Report", titleFont);
+            title.setAlignment(com.lowagie.text.Element.ALIGN_CENTER);
+            document.add(title);
+
+            document.add(new Paragraph("\nGenerated: " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))));
+            document.add(new Paragraph("Total Complaints: " + complaints.size()));
+            document.add(new Paragraph("\n"));
+
+            // Summary by Status
+            long pending = complaints.stream().filter(c -> "Pending".equals(c.getStatus())).count();
+            long ongoing = complaints.stream().filter(c -> "Ongoing".equals(c.getStatus())).count();
+            long resolved = complaints.stream().filter(c -> "Resolved".equals(c.getStatus())).count();
+
+            document.add(new Paragraph("Summary by Status:", new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 11, com.lowagie.text.Font.BOLD)));
+            document.add(new Paragraph("Pending: " + pending));
+            document.add(new Paragraph("Ongoing: " + ongoing));
+            document.add(new Paragraph("Resolved: " + resolved));
+            document.add(new Paragraph("\n"));
+
+            // Detailed Table
+            com.lowagie.text.pdf.PdfPTable table = new com.lowagie.text.pdf.PdfPTable(5);
+            table.setWidthPercentage(100);
+            table.addCell("Complaint ID");
+            table.addCell("Resident");
+            table.addCell("Title");
+            table.addCell("Status");
+            table.addCell("Date Submitted");
+
+            for (Complaint complaint : complaints) {
+                table.addCell(String.valueOf(complaint.getId()));
+                table.addCell(complaint.getResidentName());
+                table.addCell(complaint.getTitle());
+                table.addCell(complaint.getStatus());
+                table.addCell(complaint.getDateSubmitted());
+            }
+
+            document.add(table);
+            document.close();
+
+            showToast("Report saved to: " + path);
+        } catch (Exception e) {
+            e.printStackTrace();
+            showToast("Error generating report");
+        }
+    }
+
+    private void showAnnouncementsPortal(VBox center) {
+        // Create shared table upfront
+        if (announcementsTable == null) {
+            announcementsTable = new TableView<>();
+            announcementsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+
+            var titleColumn = new TableColumn<Announcement, String>("Title");
+            titleColumn.setCellValueFactory(new PropertyValueFactory<>("title"));
+
+            var typeColumn = new TableColumn<Announcement, String>("Type");
+            typeColumn.setCellValueFactory(new PropertyValueFactory<>("type"));
+
+            var postedByColumn = new TableColumn<Announcement, String>("Posted By");
+            postedByColumn.setCellValueFactory(new PropertyValueFactory<>("postedBy"));
+
+            var postedDateColumn = new TableColumn<Announcement, String>("Posted Date");
+            postedDateColumn.setCellValueFactory(new PropertyValueFactory<>("postedDate"));
+
+            var statusColumn = new TableColumn<Announcement, String>("Status");
+            statusColumn.setCellValueFactory(new PropertyValueFactory<>("status"));
+
+            var viewsColumn = new TableColumn<Announcement, String>("Views");
+            viewsColumn.setCellValueFactory(new PropertyValueFactory<>("views"));
+
+            @SuppressWarnings("unchecked")
+            TableColumn<Announcement, ?>[] columns = new TableColumn[] {titleColumn, typeColumn, postedByColumn, postedDateColumn, statusColumn, viewsColumn};
+            announcementsTable.getColumns().addAll(columns);
+            refreshAnnouncementsTable();
+        }
+
+        // Create tabs for posting and managing
+        var postingTab = new Tab("Post Announcement", createAnnouncementPostingPanel());
+        postingTab.setClosable(false);
+
+        var managementTab = new Tab("Manage Announcements", createAnnouncementManagementPanel());
+        managementTab.setClosable(false);
+
+        var tabPane = new TabPane(postingTab, managementTab);
+        tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+
+        var container = new VBox(10, tabPane);
+        container.setPadding(new Insets(15));
+        container.setStyle("-fx-background-color: " + (darkMode ? "#2b2b2b" : "#f5f5f5") + ";");
+
+        center.getChildren().clear();
+        center.getChildren().add(container);
+    }
+
+    private VBox createAnnouncementPostingPanel() {
+        var container = new VBox(15);
+        container.setPadding(new Insets(15));
+        container.setStyle("-fx-background-color: " + (darkMode ? "#1e1e1e" : "#ffffff") + ";");
+
+        var titleLabel = new Label("Post New Announcement");
+        titleLabel.setStyle("-fx-font-size: 16; -fx-font-weight: bold;");
+
+        var form = new GridPane();
+        form.setHgap(10);
+        form.setVgap(10);
+
+        var titleField = new TextField();
+        titleField.setPromptText("Announcement Title");
+        titleField.setPrefHeight(35);
+
+        var typeCombo = new ComboBox<String>();
+        typeCombo.getItems().addAll("Event", "Emergency Alert", "Program");
+        typeCombo.setPromptText("Select Type");
+        typeCombo.setPrefHeight(35);
+
+        var contentArea = new TextArea();
+        contentArea.setPromptText("Announcement Content...");
+        contentArea.setWrapText(true);
+        contentArea.setPrefHeight(120);
+
+        var startDatePicker = new DatePicker();
+        startDatePicker.setPromptText("Start Date");
+        startDatePicker.setPrefHeight(35);
+
+        var endDatePicker = new DatePicker();
+        endDatePicker.setPromptText("End Date (Optional)");
+        endDatePicker.setPrefHeight(35);
+
+        form.add(new Label("Title:"), 0, 0);
+        form.add(titleField, 1, 0);
+        form.add(new Label("Type:"), 0, 1);
+        form.add(typeCombo, 1, 1);
+        form.add(new Label("Content:"), 0, 2);
+        form.add(contentArea, 1, 2);
+        form.add(new Label("Start Date:"), 0, 3);
+        form.add(startDatePicker, 1, 3);
+        form.add(new Label("End Date:"), 0, 4);
+        form.add(endDatePicker, 1, 4);
+
+        GridPane.setHgrow(titleField, Priority.ALWAYS);
+        GridPane.setHgrow(contentArea, Priority.ALWAYS);
+
+        var submitBtn = new Button("Post Announcement");
+        submitBtn.setPrefHeight(40);
+        submitBtn.setStyle("-fx-font-size: 14; -fx-padding: 8;");
+        submitBtn.setOnAction(e -> {
+            String title = titleField.getText().trim();
+            String type = typeCombo.getValue();
+            String content = contentArea.getText().trim();
+            LocalDate startDate = startDatePicker.getValue();
+            LocalDate endDate = endDatePicker.getValue();
+
+            if (title.isEmpty() || type == null || content.isEmpty() || startDate == null) {
+                showAlert("Validation Error", "Please fill in all required fields (Title, Type, Content, Start Date)");
+                return;
+            }
+
+            try {
+                Announcement announcement = new Announcement(title, content, type,
+                    currentUsername != null ? currentUsername : "Admin",
+                    startDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd")),
+                    endDate != null ? endDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) : "");
+
+                int announcementId = DatabaseHelper.createAnnouncement(announcement);
+                System.out.println("Announcement posted with ID: " + announcementId);
+
+                showToast("Announcement posted successfully!");
+                titleField.clear();
+                typeCombo.setValue(null);
+                contentArea.clear();
+                startDatePicker.setValue(null);
+                endDatePicker.setValue(null);
+
+                refreshAnnouncementsTable();
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                showAlert("Error", "Failed to post announcement: " + ex.getMessage());
+            }
+        });
+
+        var buttonBox = new HBox(10);
+        buttonBox.setAlignment(Pos.CENTER);
+        buttonBox.getChildren().add(submitBtn);
+
+        container.getChildren().addAll(titleLabel, form, buttonBox);
+        return container;
+    }
+
+    private VBox createAnnouncementManagementPanel() {
+        var container = new VBox(10);
+        container.setPadding(new Insets(15));
+        container.setStyle("-fx-background-color: " + (darkMode ? "#1e1e1e" : "#ffffff") + ";");
+
+        var filterBox = new HBox(10);
+        filterBox.setAlignment(Pos.CENTER_LEFT);
+
+        var typeFilterCombo = new ComboBox<String>();
+        typeFilterCombo.getItems().addAll("All", "Event", "Emergency Alert", "Program");
+        typeFilterCombo.setValue("All");
+        typeFilterCombo.setPrefWidth(150);
+
+        typeFilterCombo.setOnAction(e -> {
+            String selectedType = typeFilterCombo.getValue();
+            if ("All".equals(selectedType)) {
+                refreshAnnouncementsTable();
+            } else {
+                Platform.runLater(() -> {
+                    ObservableList<Announcement> announcements = DatabaseHelper.getAnnouncementsByType(selectedType);
+                    announcementsTable.setItems(announcements);
+                });
+            }
+        });
+
+        filterBox.getChildren().addAll(new Label("Filter by Type:"), typeFilterCombo);
+
+        var buttonBox = new HBox(10);
+        buttonBox.setPadding(new Insets(10, 0, 0, 0));
+
+        var viewBtn = new Button("View Details");
+        viewBtn.setPrefHeight(35);
+        viewBtn.setOnAction(e -> {
+            var selected = announcementsTable.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                showAlert("Info", "Please select an announcement");
+                return;
+            }
+            showAnnouncementDetailsDialog(selected);
+        });
+
+        var editBtn = new Button("Edit");
+        editBtn.setPrefHeight(35);
+        editBtn.setOnAction(e -> {
+            var selected = announcementsTable.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                showAlert("Info", "Please select an announcement");
+                return;
+            }
+            showAnnouncementEditorDialog(selected);
+        });
+
+        var toggleStatusBtn = new Button("Toggle Status");
+        toggleStatusBtn.setPrefHeight(35);
+        toggleStatusBtn.setOnAction(e -> {
+            var selected = announcementsTable.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                showAlert("Info", "Please select an announcement");
+                return;
+            }
+            String newStatus = "Active".equals(selected.getStatus()) ? "Inactive" : "Active";
+            DatabaseHelper.updateAnnouncement(selected.getId(), selected.getTitle(), selected.getContent(), selected.getType(), newStatus);
+            showToast("Status updated to: " + newStatus);
+            refreshAnnouncementsTable();
+        });
+
+        var deleteBtn = new Button("Delete");
+        deleteBtn.setPrefHeight(35);
+        deleteBtn.setStyle("-fx-text-fill: #ff6b6b;");
+        deleteBtn.setOnAction(e -> {
+            var selected = announcementsTable.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                showAlert("Info", "Please select an announcement");
+                return;
+            }
+            Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+            confirm.setTitle("Confirm Deletion");
+            confirm.setHeaderText("Delete Announcement?");
+            confirm.setContentText("Are you sure you want to delete: " + selected.getTitle() + "?");
+            if (confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
+                DatabaseHelper.deleteAnnouncement(selected.getId());
+                showToast("Announcement deleted");
+                refreshAnnouncementsTable();
+            }
+        });
+
+        buttonBox.getChildren().addAll(viewBtn, editBtn, toggleStatusBtn, deleteBtn);
+
+        container.getChildren().addAll(filterBox, announcementsTable, buttonBox);
+        VBox.setVgrow(announcementsTable, Priority.ALWAYS);
+
+        return container;
+    }
+
+    private void showAnnouncementDetailsDialog(Announcement announcement) {
+        Alert dialog = new Alert(Alert.AlertType.INFORMATION);
+        dialog.setTitle("Announcement Details");
+        dialog.setHeaderText(announcement.getTitle());
+
+        var content = new StringBuilder();
+        content.append("Type: ").append(announcement.getType()).append("\n");
+        content.append("Posted By: ").append(announcement.getPostedBy()).append("\n");
+        content.append("Posted Date: ").append(announcement.getPostedDate()).append("\n");
+        content.append("Status: ").append(announcement.getStatus()).append("\n");
+        content.append("Start Date: ").append(announcement.getStartDate()).append("\n");
+        if (announcement.getEndDate() != null && !announcement.getEndDate().isEmpty()) {
+            content.append("End Date: ").append(announcement.getEndDate()).append("\n");
+        }
+        content.append("Views: ").append(announcement.getViews()).append("\n\n");
+        content.append("Content:\n").append(announcement.getContent());
+
+        dialog.setContentText(content.toString());
+        dialog.showAndWait();
+    }
+
+    private void showAnnouncementEditorDialog(Announcement announcement) {
+        Dialog<Boolean> dialog = new Dialog<>();
+        dialog.setTitle("Edit Announcement");
+        dialog.setHeaderText("Update Announcement Details");
+
+        var grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(15));
+
+        var titleField = new TextField(announcement.getTitle());
+        var typeCombo = new ComboBox<String>();
+        typeCombo.getItems().addAll("Event", "Emergency Alert", "Program");
+        typeCombo.setValue(announcement.getType());
+        var contentArea = new TextArea(announcement.getContent());
+        contentArea.setWrapText(true);
+        contentArea.setPrefHeight(120);
+        var statusCombo = new ComboBox<String>();
+        statusCombo.getItems().addAll("Active", "Inactive");
+        statusCombo.setValue(announcement.getStatus());
+
+        grid.add(new Label("Title:"), 0, 0);
+        grid.add(titleField, 1, 0);
+        grid.add(new Label("Type:"), 0, 1);
+        grid.add(typeCombo, 1, 1);
+        grid.add(new Label("Content:"), 0, 2);
+        grid.add(contentArea, 1, 2);
+        grid.add(new Label("Status:"), 0, 3);
+        grid.add(statusCombo, 1, 3);
+
+        GridPane.setHgrow(titleField, Priority.ALWAYS);
+        GridPane.setHgrow(contentArea, Priority.ALWAYS);
+
+        dialog.getDialogPane().setContent(grid);
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+
+        dialog.setResultConverter(buttonType -> {
+            if (buttonType == ButtonType.OK) {
+                try {
+                    DatabaseHelper.updateAnnouncement(announcement.getId(), titleField.getText(), contentArea.getText(), typeCombo.getValue(), statusCombo.getValue());
+                    showToast("Announcement updated successfully");
+                    refreshAnnouncementsTable();
+                    return true;
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                    showAlert("Error", "Failed to update announcement");
+                    return false;
+                }
+            }
+            return false;
+        });
+
+        dialog.showAndWait();
+    }
+
+    private void refreshAnnouncementsTable() {
+        if (announcementsTable != null) {
+            System.out.println("Refreshing announcements table...");
+            Platform.runLater(() -> {
+                ObservableList<Announcement> announcements = DatabaseHelper.getAllAnnouncements();
+                System.out.println("Loaded " + announcements.size() + " announcements");
+                announcementsTable.setItems(announcements);
+            });
+        } else {
+            System.out.println("Announcements table is null, cannot refresh");
+        }
     }
 
     private void showAlert(String title, String message) {

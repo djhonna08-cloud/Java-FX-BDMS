@@ -75,6 +75,36 @@ public class DatabaseHelper {
                     "FOREIGN KEY (resident_id) REFERENCES residents(id))";
             stmt.execute(createDocumentRequests);
 
+            // Create complaints table for incident/complaint tracking
+            String createComplaints = "CREATE TABLE IF NOT EXISTS complaints (" +
+                    "id INTEGER PRIMARY KEY AUTO_INCREMENT, " +
+                    "resident_id INTEGER NOT NULL, " +
+                    "resident_name VARCHAR(200) NOT NULL, " +
+                    "title VARCHAR(200) NOT NULL, " +
+                    "description VARCHAR(2000) NOT NULL, " +
+                    "status VARCHAR(20) DEFAULT 'Pending', " +
+                    "date_submitted VARCHAR(30) NOT NULL, " +
+                    "last_updated VARCHAR(30) NOT NULL, " +
+                    "photo_path VARCHAR(500), " +
+                    "admin_notes VARCHAR(2000), " +
+                    "assigned_to VARCHAR(100), " +
+                    "FOREIGN KEY (resident_id) REFERENCES residents(id))";
+            stmt.execute(createComplaints);
+
+            // Create announcements table for events, alerts, and programs
+            String createAnnouncements = "CREATE TABLE IF NOT EXISTS announcements (" +
+                    "id INTEGER PRIMARY KEY AUTO_INCREMENT, " +
+                    "title VARCHAR(200) NOT NULL, " +
+                    "content VARCHAR(5000) NOT NULL, " +
+                    "type VARCHAR(50) NOT NULL, " +
+                    "posted_date VARCHAR(30) NOT NULL, " +
+                    "posted_by VARCHAR(100) NOT NULL, " +
+                    "status VARCHAR(20) DEFAULT 'Active', " +
+                    "start_date VARCHAR(30), " +
+                    "end_date VARCHAR(30), " +
+                    "views INTEGER DEFAULT 0)";
+            stmt.execute(createAnnouncements);
+
             // Ensure middle_name column exists for older DBs
             try {
                 stmt.execute("ALTER TABLE residents ADD COLUMN middle_name VARCHAR(100)");
@@ -736,6 +766,318 @@ public class DatabaseHelper {
                     rs.getString("notes")
                 );
                 return Optional.of(request);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return Optional.empty();
+    }
+
+    // ==================== COMPLAINT OPERATIONS ====================
+
+    public static int createComplaint(Complaint complaint) {
+        String sql = "INSERT INTO complaints(resident_id, resident_name, title, description, status, date_submitted, last_updated, photo_path, admin_notes, assigned_to) " +
+                     "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             PreparedStatement pstmt = conn.prepareStatement(sql, java.sql.Statement.RETURN_GENERATED_KEYS)) {
+            
+            System.out.println("Creating complaint: " + complaint.getTitle());
+            
+            pstmt.setInt(1, complaint.getResidentId());
+            pstmt.setString(2, complaint.getResidentName());
+            pstmt.setString(3, complaint.getTitle());
+            pstmt.setString(4, complaint.getDescription());
+            pstmt.setString(5, complaint.getStatus());
+            pstmt.setString(6, complaint.getDateSubmitted());
+            pstmt.setString(7, complaint.getLastUpdated());
+            pstmt.setString(8, complaint.getPhotoPath());
+            pstmt.setString(9, complaint.getAdminNotes() != null ? complaint.getAdminNotes() : "");
+            pstmt.setString(10, complaint.getAssignedTo() != null ? complaint.getAssignedTo() : "");
+            
+            int result = pstmt.executeUpdate();
+            System.out.println("Insert result: " + result);
+            
+            ResultSet rs = pstmt.getGeneratedKeys();
+            if (rs.next()) {
+                int complaintId = rs.getInt(1);
+                System.out.println("Complaint created with ID: " + complaintId);
+                logAction("System", "Created complaint: " + complaint.getTitle(), 
+                         complaint.getResidentName(), "Complaint");
+                return complaintId;
+            } else {
+                System.out.println("No generated keys returned");
+            }
+        } catch (SQLException e) {
+            System.err.println("Error creating complaint: " + e.getMessage());
+            e.printStackTrace();
+        }
+        return -1;
+    }
+
+    public static void updateComplaintStatus(int complaintId, String status) {
+        String sql = "UPDATE complaints SET status = ?, last_updated = ? WHERE id = ?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            java.time.LocalDateTime now = java.time.LocalDateTime.now();
+            java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+            
+            pstmt.setString(1, status);
+            pstmt.setString(2, now.format(formatter));
+            pstmt.setInt(3, complaintId);
+            pstmt.executeUpdate();
+            
+            logAction("System", "Updated complaint status to: " + status + " (ID: " + complaintId + ")", 
+                     "Complaint ID " + complaintId, "Complaint");
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void updateComplaintNotes(int complaintId, String notes, String assignedTo) {
+        String sql = "UPDATE complaints SET admin_notes = ?, assigned_to = ?, last_updated = ? WHERE id = ?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            java.time.LocalDateTime now = java.time.LocalDateTime.now();
+            java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+            
+            pstmt.setString(1, notes);
+            pstmt.setString(2, assignedTo);
+            pstmt.setString(3, now.format(formatter));
+            pstmt.setInt(4, complaintId);
+            pstmt.executeUpdate();
+            
+            logAction("System", "Updated complaint notes (ID: " + complaintId + ")", 
+                     "Complaint ID " + complaintId, "Complaint");
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static ObservableList<Complaint> getAllComplaints() {
+        ObservableList<Complaint> complaints = FXCollections.observableArrayList();
+        String sql = "SELECT * FROM complaints ORDER BY date_submitted DESC";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                Complaint complaint = new Complaint(
+                    rs.getInt("id"),
+                    rs.getInt("resident_id"),
+                    rs.getString("resident_name"),
+                    rs.getString("title"),
+                    rs.getString("description"),
+                    rs.getString("status"),
+                    rs.getString("date_submitted"),
+                    rs.getString("last_updated"),
+                    rs.getString("photo_path"),
+                    rs.getString("admin_notes"),
+                    rs.getString("assigned_to")
+                );
+                complaints.add(complaint);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return complaints;
+    }
+
+    public static Optional<Complaint> getComplaintById(int id) {
+        String sql = "SELECT * FROM complaints WHERE id = ?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, id);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                Complaint complaint = new Complaint(
+                    rs.getInt("id"),
+                    rs.getInt("resident_id"),
+                    rs.getString("resident_name"),
+                    rs.getString("title"),
+                    rs.getString("description"),
+                    rs.getString("status"),
+                    rs.getString("date_submitted"),
+                    rs.getString("last_updated"),
+                    rs.getString("photo_path"),
+                    rs.getString("admin_notes"),
+                    rs.getString("assigned_to")
+                );
+                return Optional.of(complaint);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return Optional.empty();
+    }
+
+    public static ObservableList<Complaint> getComplaintsByResident(int residentId) {
+        ObservableList<Complaint> complaints = FXCollections.observableArrayList();
+        String sql = "SELECT * FROM complaints WHERE resident_id = ? ORDER BY date_submitted DESC";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, residentId);
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                Complaint complaint = new Complaint(
+                    rs.getInt("id"),
+                    rs.getInt("resident_id"),
+                    rs.getString("resident_name"),
+                    rs.getString("title"),
+                    rs.getString("description"),
+                    rs.getString("status"),
+                    rs.getString("date_submitted"),
+                    rs.getString("last_updated"),
+                    rs.getString("photo_path"),
+                    rs.getString("admin_notes"),
+                    rs.getString("assigned_to")
+                );
+                complaints.add(complaint);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return complaints;
+    }
+
+    // ==================== ANNOUNCEMENT OPERATIONS ====================
+
+    public static int createAnnouncement(Announcement announcement) {
+        String sql = "INSERT INTO announcements(title, content, type, posted_date, posted_by, status, start_date, end_date, views) " +
+                     "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             PreparedStatement pstmt = conn.prepareStatement(sql, java.sql.Statement.RETURN_GENERATED_KEYS)) {
+            
+            pstmt.setString(1, announcement.getTitle());
+            pstmt.setString(2, announcement.getContent());
+            pstmt.setString(3, announcement.getType());
+            pstmt.setString(4, announcement.getPostedDate());
+            pstmt.setString(5, announcement.getPostedBy());
+            pstmt.setString(6, announcement.getStatus());
+            pstmt.setString(7, announcement.getStartDate());
+            pstmt.setString(8, announcement.getEndDate());
+            pstmt.setInt(9, announcement.getViews());
+            
+            pstmt.executeUpdate();
+            
+            ResultSet rs = pstmt.getGeneratedKeys();
+            if (rs.next()) {
+                int announcementId = rs.getInt(1);
+                logAction("System", "Posted announcement: " + announcement.getTitle(), 
+                         announcement.getPostedBy(), "Announcement");
+                return announcementId;
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return -1;
+    }
+
+    public static void updateAnnouncement(int announcementId, String title, String content, String status, String endDate) {
+        String sql = "UPDATE announcements SET title = ?, content = ?, status = ?, end_date = ? WHERE id = ?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, title);
+            pstmt.setString(2, content);
+            pstmt.setString(3, status);
+            pstmt.setString(4, endDate);
+            pstmt.setInt(5, announcementId);
+            pstmt.executeUpdate();
+            
+            logAction("System", "Updated announcement (ID: " + announcementId + ")", 
+                     "Announcement ID " + announcementId, "Announcement");
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void deleteAnnouncement(int announcementId) {
+        String sql = "DELETE FROM announcements WHERE id = ?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, announcementId);
+            pstmt.executeUpdate();
+            
+            logAction("System", "Deleted announcement (ID: " + announcementId + ")", 
+                     "Announcement ID " + announcementId, "Announcement");
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static ObservableList<Announcement> getAllAnnouncements() {
+        ObservableList<Announcement> announcements = FXCollections.observableArrayList();
+        String sql = "SELECT * FROM announcements ORDER BY posted_date DESC";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                Announcement announcement = new Announcement(
+                    rs.getInt("id"),
+                    rs.getString("title"),
+                    rs.getString("content"),
+                    rs.getString("type"),
+                    rs.getString("posted_date"),
+                    rs.getString("posted_by"),
+                    rs.getString("status"),
+                    rs.getString("start_date"),
+                    rs.getString("end_date"),
+                    rs.getInt("views")
+                );
+                announcements.add(announcement);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return announcements;
+    }
+
+    public static ObservableList<Announcement> getAnnouncementsByType(String type) {
+        ObservableList<Announcement> announcements = FXCollections.observableArrayList();
+        String sql = "SELECT * FROM announcements WHERE type = ? AND status = 'Active' ORDER BY posted_date DESC";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, type);
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                Announcement announcement = new Announcement(
+                    rs.getInt("id"),
+                    rs.getString("title"),
+                    rs.getString("content"),
+                    rs.getString("type"),
+                    rs.getString("posted_date"),
+                    rs.getString("posted_by"),
+                    rs.getString("status"),
+                    rs.getString("start_date"),
+                    rs.getString("end_date"),
+                    rs.getInt("views")
+                );
+                announcements.add(announcement);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return announcements;
+    }
+
+    public static Optional<Announcement> getAnnouncementById(int id) {
+        String sql = "SELECT * FROM announcements WHERE id = ?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, id);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                Announcement announcement = new Announcement(
+                    rs.getInt("id"),
+                    rs.getString("title"),
+                    rs.getString("content"),
+                    rs.getString("type"),
+                    rs.getString("posted_date"),
+                    rs.getString("posted_by"),
+                    rs.getString("status"),
+                    rs.getString("start_date"),
+                    rs.getString("end_date"),
+                    rs.getInt("views")
+                );
+                return Optional.of(announcement);
             }
         } catch (SQLException e) {
             e.printStackTrace();
