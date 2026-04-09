@@ -66,6 +66,7 @@ import javafx.beans.binding.Bindings;
 
 public class App extends Application {
     private TableView<Resident> residentTable;
+    private TableView<DocumentRequest> documentRequestsTable;
     private TextField searchField; // Promoted to class level for access in other methods
     private Pagination pagination;
     private static final int ROWS_PER_PAGE = 15;
@@ -106,8 +107,9 @@ public class App extends Application {
         loginScene = createLoginScene();
         stage.setScene(loginScene);
         stage.setTitle("Baranggay San Marino Information Management System");
-        stage.setMinWidth(1000);
-        stage.setMinHeight(700);
+        stage.setWidth(1024);
+        stage.setHeight(768);
+        stage.setResizable(false);
         stage.show();
     }
 
@@ -152,19 +154,39 @@ public class App extends Application {
     }
 
     private Scene createLoginScene() {
-        var logoDot = new Label(" ");
-        logoDot.getStyleClass().add("activity-item-dot"); // Re-using a similar style
+        // Load and display logo from assets
+        ImageView logoView = new ImageView();
+        try {
+            var resourceStream = getClass().getResourceAsStream("/assets/logo.png");
+            if (resourceStream != null) {
+                var logoImage = new Image(resourceStream);
+                logoView.setImage(logoImage);
+                logoView.setFitWidth(220);
+                logoView.setPreserveRatio(true);
+                System.out.println("✓ Logo loaded from resources");
+            } else {
+                System.out.println("✗ Logo resource not found, trying file path");
+                // Fallback to file path
+                File logoFile = new File("src/assets/logo.png");
+                if (logoFile.exists()) {
+                    var logoImage = new Image(logoFile.toURI().toString());
+                    logoView.setImage(logoImage);
+                    logoView.setFitWidth(220);
+                    logoView.setPreserveRatio(true);
+                    System.out.println("✓ Logo loaded from file path");
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("✗ Error loading logo: " + e.getMessage());
+            e.printStackTrace();
+        }
 
-        var titleLabel = new Label("Baranggay San Marino Information Management System");
-        titleLabel.getStyleClass().add("brand-logo-label");
-        titleLabel.getStyleClass().add("text-color-primary");
-
-        var header = new HBox(8, logoDot, titleLabel);
+        var header = new HBox(8, logoView);
         header.setAlignment(Pos.CENTER);
 
         var subtitle = new Label("Welcome back!");
         subtitle.getStyleClass().add("login-subtitle");
-        subtitle.getStyleClass().add("text-color-primary");
+        subtitle.setStyle("-fx-text-fill: " + (darkMode ? "#ffffff" : "#1a1a1a") + ";");
 
         var usernameField = new TextField();
         usernameField.setPromptText("E.g. info@example.com");
@@ -174,7 +196,7 @@ public class App extends Application {
         passwordField.setPromptText("Enter password");
         passwordField.getStyleClass().add("password-field");
 
-        var loginButton = new Button("Log in with email");
+        var loginButton = new Button("Login");
         loginButton.getStyleClass().add("button-primary");
         loginButton.setMaxWidth(Double.MAX_VALUE);
 
@@ -204,26 +226,58 @@ public class App extends Application {
         forgotLink.getStyleClass().add("hyperlink");
         forgotLink.setOnAction(e -> showAlert("Forgot Password", "Please contact support to reset your password."));
 
-        var orLabel = new Label("or");
-        orLabel.getStyleClass().add("text-color-secondary");
-        var separatorHBox = new HBox(10, new Separator(), orLabel, new Separator());
-        separatorHBox.setAlignment(Pos.CENTER);
-        VBox.setVgrow(separatorHBox, javafx.scene.layout.Priority.NEVER);
 
         var rememberCheckBox = new CheckBox("Remember me for 30 days");
         rememberCheckBox.getStyleClass().add("check-box");
 
-        var formVBox = new VBox(12, subtitle, usernameField, passwordField, loginButton, forgotLink, separatorHBox, rememberCheckBox);
+        var formVBox = new VBox(12, subtitle, usernameField, passwordField, loginButton, forgotLink, rememberCheckBox);
         formVBox.setAlignment(Pos.CENTER);
         formVBox.getStyleClass().add("login-card");
         formVBox.setMaxWidth(360);
 
         var card = new VBox(20, header, formVBox);
         card.setAlignment(Pos.CENTER);
+        card.setStyle("-fx-background-color: rgba(255, 255, 255, 0.95); -fx-padding: 30; -fx-border-radius: 10; -fx-background-radius: 10;");
 
-        var root = new StackPane(card);
-        root.getStyleClass().add("root");
-        root.setPadding(new Insets(60));
+        // Create background image view
+        ImageView backgroundView = new ImageView();
+        try {
+            var resourceStream = getClass().getResourceAsStream("/assets/loginbg.png");
+            if (resourceStream != null) {
+                var bgImage = new Image(resourceStream);
+                backgroundView.setImage(bgImage);
+                backgroundView.setFitWidth(1024);
+                backgroundView.setFitHeight(768);
+                backgroundView.setPreserveRatio(false);
+                backgroundView.setOpacity(1);
+                System.out.println("✓ Background loaded from resources");
+            } else {
+                System.out.println("✗ Background resource not found, trying file path");
+                File bgFile = new File("src/assets/loginbg.png");
+                if (bgFile.exists()) {
+                    var bgImage = new Image(bgFile.toURI().toString());
+                    backgroundView.setImage(bgImage);
+                    backgroundView.setFitWidth(1024);
+                    backgroundView.setFitHeight(768);
+                    backgroundView.setPreserveRatio(false);
+                    backgroundView.setOpacity(1);
+                    System.out.println("✓ Background loaded from file path");
+                } else {
+                    System.out.println("✗ Background file not found");
+                    backgroundView.setStyle("-fx-background-color: #e8e8e8;");
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("✗ Error loading background: " + e.getMessage());
+            e.printStackTrace();
+            backgroundView.setStyle("-fx-background-color: #e8e8e8;");
+        }
+
+        // Center the card on the background
+        var root = new StackPane();
+        root.getChildren().add(backgroundView);
+        root.getChildren().add(card);
+        StackPane.setAlignment(card, Pos.CENTER);
         this.rootPane = root; // For toast notifications
 
         // Start with a desktop-friendly size, content remains centered
@@ -238,7 +292,7 @@ public class App extends Application {
 
         // --- TOP BAR (Search, Notifications, User Profile) ---
         searchField = new TextField();
-        searchField.setPromptText("Search resident, case ID...");
+        searchField.setPromptText("Search resident");
         searchField.getStyleClass().add("search-field");
         
         // Unique Functionality: Scan-to-Edit
@@ -274,11 +328,11 @@ public class App extends Application {
 
         var userLabel = new Label(username);
         userLabel.getStyleClass().add("user-profile-name");
-        userLabel.getStyleClass().add("text-color-primary");
+        userLabel.setStyle("-fx-text-fill: " + (darkMode ? "#f0f0f0" : "#1a1a1a") + ";");
 
         var roleLabel = new Label(role);
         roleLabel.getStyleClass().add("user-profile-role");
-        roleLabel.getStyleClass().add("text-color-secondary");
+        roleLabel.setStyle("-fx-text-fill: " + (darkMode ? "#b0b0b0" : "#666") + ";");
 
         var userProfile = new VBox(-2, userLabel, roleLabel);
         userProfile.setAlignment(Pos.CENTER_RIGHT);
@@ -291,12 +345,27 @@ public class App extends Application {
         topBar.setAlignment(Pos.CENTER);
 
         // Sidebar
-        var logoDot = new Label(" ");
-        logoDot.getStyleClass().add("brand-logo-dot");
-        var logoLabel = new Label("BDMS");
-        logoLabel.getStyleClass().add("brand-logo-label");
-        logoLabel.getStyleClass().add("text-color-primary");
-        var topBrand = new HBox(8, logoDot, logoLabel);
+        ImageView dashboardLogoView = new ImageView();
+        try {
+            var resourceStream = getClass().getResourceAsStream("/assets/logo.png");
+            if (resourceStream != null) {
+                var logoImage = new Image(resourceStream);
+                dashboardLogoView.setImage(logoImage);
+                dashboardLogoView.setFitWidth(120);
+                dashboardLogoView.setPreserveRatio(true);
+            } else {
+                File logoFile = new File("src/assets/logo.png");
+                if (logoFile.exists()) {
+                    var logoImage = new Image(logoFile.toURI().toString());
+                    dashboardLogoView.setImage(logoImage);
+                    dashboardLogoView.setFitWidth(120);
+                    dashboardLogoView.setPreserveRatio(true);
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        var topBrand = new HBox(8, dashboardLogoView);
         topBrand.setAlignment(Pos.CENTER_LEFT);
         topBrand.setPadding(new Insets(20, 0, 20, 20));
 
@@ -321,6 +390,8 @@ public class App extends Application {
         usersBtn.setUserData("users");
         var residentBtn = createSidebarButton("Residents", FontAwesomeSolid.ADDRESS_BOOK);
         residentBtn.setUserData("resident");
+        var certificatesBtn = createSidebarButton("Certificates & Clearances", FontAwesomeSolid.FILE_PDF);
+        certificatesBtn.setUserData("certificates");
         var systemBtn = createSidebarButton("System Config", FontAwesomeSolid.COGS);
         systemBtn.setUserData("system");
         var maintenanceBtn = createSidebarButton("Maintenance", FontAwesomeSolid.SHIELD_ALT);
@@ -344,8 +415,7 @@ public class App extends Application {
 
         // Theme switch control (animated)
         var themeLabel = new Label(darkMode ? "Dark Mode" : "Light Mode");
-        themeLabel.getStyleClass().add("text-color-secondary");
-        themeLabel.getStyleClass().add("theme-label");
+        themeLabel.setStyle("-fx-text-fill: " + (darkMode ? "#b0b0b0" : "#666") + ";");
 
         var themeSwitch = createThemeSwitch(() -> {
             // Hot-swap CSS without recreating the scene to preserve state
@@ -367,7 +437,7 @@ public class App extends Application {
         });
 
         // Add navigation items to sidebar
-        navMenu.getChildren().addAll(overviewBtn, userSubmenu, residentBtn, systemBtn, maintenanceBtn, themeRow, logoutBtn);
+        navMenu.getChildren().addAll(overviewBtn, userSubmenu, residentBtn, certificatesBtn, systemBtn, maintenanceBtn, themeRow, logoutBtn);
 
         // Restore last active section (if any)
         if ("users".equals(activeSection)) {
@@ -387,6 +457,8 @@ public class App extends Application {
             }
         } else if ("resident".equals(activeSection)) {
             setActiveNav(residentBtn);
+        } else if ("certificates".equals(activeSection)) {
+            setActiveNav(certificatesBtn);
         } else if ("system".equals(activeSection)) {
             setActiveNav(systemBtn);
         } else if ("maintenance".equals(activeSection)) {
@@ -408,6 +480,10 @@ public class App extends Application {
         residentBtn.setOnAction(e -> {
             setActiveNav(residentBtn);
             showResidentControl(center);
+        });
+        certificatesBtn.setOnAction(e -> {
+            setActiveNav(certificatesBtn);
+            showCertificatesAndClearances(center);
         });
         systemBtn.setOnAction(e -> {
             setActiveNav(systemBtn);
@@ -451,7 +527,7 @@ public class App extends Application {
             showOverview(center);
         }
 
-        var scene = new Scene(root, 900, 600);
+        var scene = new Scene(root, 1024, 768);
         scene.getStylesheets().add(getClass().getResource(darkMode ? "dark-theme.css" : "light-theme.css").toExternalForm());
         return scene;
     }
@@ -582,15 +658,15 @@ public class App extends Application {
         
         var recentActivity = new VBox(12);
         var actTitle = new Label("Recent Activity");
-        actTitle.getStyleClass().add("activity-title");
+        actTitle.setStyle("-fx-text-fill: " + (darkMode ? "#ffffff" : "#1a1a1a") + "; -fx-font-size: 14; -fx-font-weight: bold;");
         
         recentActivity.getChildren().add(actTitle);
-        recentActivity.getChildren().addAll(
-            createActivityItem("New resident registered: Juan Dela Cruz"),
-            createActivityItem("Barangay Clearance issued to Maria Clara"),
-            createActivityItem("Blotter case #2023-005 filed"),
-            createActivityItem("System backup completed")
-        );
+        
+        // Load real recent activity from audit logs (last 4 activities)
+        var activityLogs = DatabaseHelper.getRecentActivity(4);
+        for (AuditEntry entry : activityLogs) {
+            recentActivity.getChildren().add(createActivityItem(entry.getAction()));
+        }
         
         // Create Age Distribution Chart
         var ageData = DatabaseHelper.getAgeDistribution();
@@ -800,7 +876,7 @@ public class App extends Application {
         permissionsTable.setItems(permissionsData);
 
         var infoLabel = new Label("Permission Levels: None, View Only, Manage, Full Access");
-        infoLabel.setStyle("-fx-font-size: 11; -fx-text-fill: #666;");
+        infoLabel.setStyle("-fx-font-size: 11; -fx-text-fill: " + (darkMode ? "#d0d0d0" : "#333") + ";");
 
         var content = new VBox(12, infoLabel, permissionsTable);
         VBox.setVgrow(permissionsTable, Priority.ALWAYS);
@@ -841,20 +917,430 @@ public class App extends Application {
 
         TableColumn<AuditEntry, String> actionCol = new TableColumn<>("Action");
         actionCol.setCellValueFactory(new PropertyValueFactory<>("action"));
-        actionCol.setPrefWidth(400);
+        actionCol.setPrefWidth(250);
 
-        table.getColumns().setAll(List.of(timestampCol, userCol, actionCol));
+        TableColumn<AuditEntry, String> detailsCol = new TableColumn<>("Details");
+        detailsCol.setCellValueFactory(new PropertyValueFactory<>("details"));
+        detailsCol.setPrefWidth(200);
 
-        // Placeholder data
-        ObservableList<AuditEntry> data = FXCollections.observableArrayList(
-            new AuditEntry("2024-08-01 10:05:12", "secretary", "Issued Barangay Clearance to Maria Clara."),
-            new AuditEntry("2024-08-01 09:45:30", "superadmin", "Updated system setting: 'fee_clearance' to ₱50.00."),
-            new AuditEntry("2024-07-31 15:20:01", "captain", "Filed new blotter case #2023-005."),
-            new AuditEntry("2024-07-31 11:00:45", "secretary", "Registered new resident: Juan Dela Cruz.")
-        );
+        TableColumn<AuditEntry, String> categoryCol = new TableColumn<>("Category");
+        categoryCol.setCellValueFactory(new PropertyValueFactory<>("category"));
+        categoryCol.setPrefWidth(100);
+
+        table.getColumns().setAll(List.of(timestampCol, userCol, actionCol, detailsCol, categoryCol));
+
+        // Load real audit logs from database
+        ObservableList<AuditEntry> data = DatabaseHelper.getAuditLogs();
         table.setItems(data);
 
         updateDashboardContent(center, "Audit Log", table);
+    }
+
+    private void showCertificatesAndClearances(VBox center) {
+        // Two tabs: Request new document and view requests
+        TabPane tabPane = new TabPane();
+        tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+
+        // Tab 1: Request New Document
+        Tab requestTab = new Tab("Request Document", createDocumentRequestPanel());
+        requestTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+
+        // Tab 2: Pending & Completed Requests
+        Tab requestsTab = new Tab("Document Requests", createDocumentRequestsTable());
+        requestsTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+
+        tabPane.getTabs().addAll(requestTab, requestsTab);
+        updateDashboardContent(center, "Certificates & Clearances", tabPane);
+    }
+
+    private VBox createDocumentRequestPanel() {
+        VBox panel = new VBox(15);
+        panel.setPadding(new Insets(20));
+
+        // Step 1: Select Resident with Search
+        Label residentLabel = new Label("Step 1: Select Resident");
+        residentLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + (darkMode ? "#ffffff" : "#1a1a1a") + ";");
+
+        // Search field for residents
+        TextField residentSearchField = new TextField();
+        residentSearchField.setPromptText("Search by name or ID...");
+        residentSearchField.setStyle("-fx-font-size: 12;");
+        residentSearchField.setPrefWidth(300);
+
+        // Load all residents
+        ObservableList<Resident> allResidents = DatabaseHelper.getResidents(null, 0, 1000, "last_name", "ASC");
+        
+        // Filtered list
+        ObservableList<Resident> filteredResidents = FXCollections.observableArrayList();
+        
+        // ListView to show results
+        ListView<Resident> residentListView = new ListView<>();
+        residentListView.setStyle("-fx-control-inner-background: " + (darkMode ? "#0f172a" : "#ffffff") + ";");
+        residentListView.setPrefHeight(150);
+        residentListView.setCellFactory(param -> new ListCell<Resident>() {
+            @Override
+            protected void updateItem(Resident resident, boolean empty) {
+                super.updateItem(resident, empty);
+                setText(empty ? "" : resident.getLastName() + ", " + resident.getFirstName() + " (ID: " + resident.getId() + ")");
+            }
+        });
+        residentListView.setItems(filteredResidents);
+
+        // Selected resident holder
+        java.util.concurrent.atomic.AtomicReference<Resident> selectedResident = new java.util.concurrent.atomic.AtomicReference<>(null);
+        
+        // Search logic
+        residentSearchField.textProperty().addListener((obs, oldVal, newVal) -> {
+            filteredResidents.clear();
+            if (newVal == null || newVal.trim().isEmpty()) {
+                filteredResidents.addAll(allResidents);
+            } else {
+                String searchLower = newVal.toLowerCase();
+                allResidents.stream()
+                    .filter(r -> r.getLastName().toLowerCase().contains(searchLower) || 
+                               r.getFirstName().toLowerCase().contains(searchLower) ||
+                               String.valueOf(r.getId()).contains(searchLower))
+                    .forEach(filteredResidents::add);
+            }
+        });
+        filteredResidents.addAll(allResidents);
+
+        // Handle resident selection
+        residentListView.setOnMouseClicked(e -> {
+            Resident selected = residentListView.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                selectedResident.set(selected);
+                residentSearchField.setText(selected.getLastName() + ", " + selected.getFirstName());
+                filteredResidents.clear();
+            }
+        });
+
+        VBox residentSearchBox = new VBox(8, residentSearchField, residentListView);
+        var residentBoxLabel = new Label("Resident:");
+        residentBoxLabel.setStyle("-fx-text-fill: " + (darkMode ? "#d0d0d0" : "#333") + ";");
+        HBox residentBox = new HBox(10, residentBoxLabel, residentSearchBox);
+        residentBox.setAlignment(Pos.TOP_LEFT);
+
+        // Step 2: Select Document Type
+        Label docTypeLabel = new Label("Step 2: Select Document Type");
+        docTypeLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + (darkMode ? "#ffffff" : "#1a1a1a") + ";");
+
+        ComboBox<String> docTypeCombo = new ComboBox<>();
+        docTypeCombo.setItems(FXCollections.observableArrayList(
+            "Barangay Clearance",
+            "Certificate of Residency",
+            "Indigency Certificate"
+        ));
+        docTypeCombo.setPrefWidth(300);
+
+        Label feeLabel = new Label("Fee: ₱0");
+        feeLabel.setStyle("-fx-font-size: 12; -fx-text-fill: " + (darkMode ? "#d0d0d0" : "#333") + ";");
+        docTypeCombo.setOnAction(e -> {
+            if (docTypeCombo.getValue() != null) {
+                double fee = DocumentRequest.getFeeForDocumentType(docTypeCombo.getValue());
+                feeLabel.setText("Fee: ₱" + fee);
+            }
+        });
+
+        var docTypeBoxLabel = new Label("Document Type:");
+        docTypeBoxLabel.setStyle("-fx-text-fill: " + (darkMode ? "#d0d0d0" : "#333") + ";");
+        HBox docTypeBox = new HBox(10, docTypeBoxLabel, docTypeCombo);
+        docTypeBox.setAlignment(Pos.CENTER_LEFT);
+
+        // Step 3: Purpose
+        Label purposeLabel = new Label("Step 3: Purpose of Request");
+        purposeLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + (darkMode ? "#ffffff" : "#1a1a1a") + ";");
+
+        TextArea purposeArea = new TextArea();
+        purposeArea.setPromptText("E.g., For loan application, for employment, for travel");
+        purposeArea.setWrapText(true);
+        purposeArea.setPrefRowCount(4);
+
+        // Submit Button
+        Button submitBtn = new Button("Submit Request");
+        submitBtn.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+        submitBtn.setDisable(true);
+
+        // Enable button only when all fields are filled
+        residentSearchField.textProperty().addListener((obs, oldVal, newVal) -> 
+            submitBtn.setDisable(selectedResident.get() == null || docTypeCombo.getValue() == null || purposeArea.getText().trim().isEmpty())
+        );
+        docTypeCombo.valueProperty().addListener((obs, oldVal, newVal) ->
+            submitBtn.setDisable(selectedResident.get() == null || newVal == null || purposeArea.getText().trim().isEmpty())
+        );
+        purposeArea.textProperty().addListener((obs, oldVal, newVal) ->
+            submitBtn.setDisable(selectedResident.get() == null || docTypeCombo.getValue() == null || newVal.trim().isEmpty())
+        );
+
+        submitBtn.setOnAction(e -> {
+            Resident selected = selectedResident.get();
+            String docType = docTypeCombo.getValue();
+            String purpose = purposeArea.getText();
+
+            DocumentRequest request = new DocumentRequest(selected.getId(), selected.getLastName() + ", " + selected.getFirstName(), docType, purpose);
+            int requestId = DatabaseHelper.createDocumentRequest(request);
+
+            if (requestId > 0) {
+                showToast("Document request submitted successfully!");
+                residentSearchField.clear();
+                selectedResident.set(null);
+                filteredResidents.clear();
+                filteredResidents.addAll(allResidents);
+                docTypeCombo.setValue(null);
+                purposeArea.clear();
+                feeLabel.setText("Fee: ₱0");
+                refreshDocumentRequestsTable();
+            } else {
+                showToast("Failed to submit request.");
+            }
+        });
+
+        panel.getChildren().addAll(
+            residentLabel, residentBox,
+            new Separator(),
+            docTypeLabel, docTypeBox, feeLabel,
+            new Separator(),
+            purposeLabel, purposeArea,
+            submitBtn
+        );
+
+        ScrollPane scrollPane = new ScrollPane(panel);
+        scrollPane.setFitToWidth(true);
+        
+        VBox container = new VBox(scrollPane);
+        VBox.setVgrow(scrollPane, Priority.ALWAYS);
+        return container;
+    }
+
+    private VBox createDocumentRequestsTable() {
+        VBox container = new VBox(10);
+        container.setPadding(new Insets(10));
+
+        documentRequestsTable = new TableView<>();
+        documentRequestsTable.getStyleClass().add("table-view");
+
+        TableColumn<DocumentRequest, String> residentCol = new TableColumn<>("Resident");
+        residentCol.setCellValueFactory(new PropertyValueFactory<>("residentName"));
+        residentCol.setPrefWidth(180);
+
+        TableColumn<DocumentRequest, String> docTypeCol = new TableColumn<>("Document Type");
+        docTypeCol.setCellValueFactory(new PropertyValueFactory<>("documentType"));
+        docTypeCol.setPrefWidth(150);
+
+        TableColumn<DocumentRequest, String> requestDateCol = new TableColumn<>("Request Date");
+        requestDateCol.setCellValueFactory(new PropertyValueFactory<>("requestDate"));
+        requestDateCol.setPrefWidth(120);
+
+        TableColumn<DocumentRequest, String> statusCol = new TableColumn<>("Status");
+        statusCol.setCellValueFactory(new PropertyValueFactory<>("status"));
+        statusCol.setPrefWidth(100);
+
+        TableColumn<DocumentRequest, String> paymentCol = new TableColumn<>("Payment");
+        paymentCol.setCellValueFactory(new PropertyValueFactory<>("paymentStatus"));
+        paymentCol.setPrefWidth(100);
+
+        TableColumn<DocumentRequest, Double> feeCol = new TableColumn<>("Fee");
+        feeCol.setCellValueFactory(new PropertyValueFactory<>("fee"));
+        feeCol.setPrefWidth(80);
+
+        documentRequestsTable.getColumns().setAll(List.of(residentCol, docTypeCol, requestDateCol, statusCol, paymentCol, feeCol));
+
+        // Load data
+        ObservableList<DocumentRequest> requests = DatabaseHelper.getAllDocumentRequests();
+        documentRequestsTable.setItems(requests);
+
+        // Buttons
+        Button approveBtn = new Button("Approve", new FontIcon(FontAwesomeSolid.CHECK_CIRCLE));
+        approveBtn.setDisable(true);
+        approveBtn.setOnAction(e -> {
+            DocumentRequest selected = documentRequestsTable.getSelectionModel().getSelectedItem();
+            if (selected != null && "PENDING".equals(selected.getStatus())) {
+                DatabaseHelper.approveDocumentRequest(selected.getId(), "Captain");
+                selected.setStatus("APPROVED");
+                showToast("Document request approved!");
+                refreshDocumentRequestsTable();
+            }
+        });
+
+        Button paymentBtn = new Button("Record Payment", new FontIcon(FontAwesomeSolid.DOLLAR_SIGN));
+        paymentBtn.setDisable(true);
+        paymentBtn.setOnAction(e -> {
+            DocumentRequest selected = documentRequestsTable.getSelectionModel().getSelectedItem();
+            if (selected != null && "APPROVED".equals(selected.getStatus())) {
+                DatabaseHelper.recordPayment(selected.getId());
+                selected.setPaymentStatus("PAID");
+                showToast("Payment recorded!");
+                refreshDocumentRequestsTable();
+            }
+        });
+
+        Button generateBtn = new Button("Generate & Print", new FontIcon(FontAwesomeSolid.FILE_PDF));
+        generateBtn.setDisable(true);
+        generateBtn.setOnAction(e -> {
+            DocumentRequest selected = documentRequestsTable.getSelectionModel().getSelectedItem();
+            if (selected != null && "APPROVED".equals(selected.getStatus()) && "PAID".equals(selected.getPaymentStatus())) {
+                Optional<Resident> resident = DatabaseHelper.getResidentById(selected.getResidentId());
+                if (resident.isPresent()) {
+                    generateOfficialDocument(selected, resident.get());
+                    DatabaseHelper.completeDocumentRequest(selected.getId());
+                    selected.setStatus("COMPLETED");
+                    showToast("Document generated successfully!");
+                    refreshDocumentRequestsTable();
+                }
+            }
+        });
+
+        documentRequestsTable.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+            boolean isSelected = newVal != null;
+            approveBtn.setDisable(!isSelected || (newVal != null && !"PENDING".equals(newVal.getStatus())));
+            paymentBtn.setDisable(!isSelected || (newVal != null && !"APPROVED".equals(newVal.getStatus())));
+            generateBtn.setDisable(!isSelected || (newVal != null && (!"APPROVED".equals(newVal.getStatus()) || !"PAID".equals(newVal.getPaymentStatus()))));
+        });
+
+        ToolBar toolBar = new ToolBar(approveBtn, paymentBtn, generateBtn);
+        toolBar.setStyle("-fx-background-color: transparent; -fx-padding: 0;");
+
+        container.getChildren().addAll(toolBar, documentRequestsTable);
+        VBox.setVgrow(documentRequestsTable, Priority.ALWAYS);
+        return container;
+    }
+
+    private void refreshDocumentRequestsTable() {
+        if (documentRequestsTable != null) {
+            ObservableList<DocumentRequest> requests = DatabaseHelper.getAllDocumentRequests();
+            documentRequestsTable.setItems(requests);
+        }
+    }
+
+    private void generateOfficialDocument(DocumentRequest request, Resident resident) {
+        try {
+            String docType = request.getDocumentType();
+            String filename = "Barangay_" + docType.replace(" ", "_") + "_" + resident.getId() + ".pdf";
+            String path = System.getProperty("user.home") + "/Downloads/" + filename;
+
+            Document document = new Document();
+            PdfWriter.getInstance(document, new FileOutputStream(path));
+            document.open();
+
+            // Header - Official Letterhead
+            document.add(createDocumentHeader());
+            document.add(new Paragraph("\n"));
+
+            // Document Title
+            com.lowagie.text.Font titleFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 14, com.lowagie.text.Font.BOLD);
+            Paragraph title = new Paragraph(docType.toUpperCase(), titleFont);
+            title.setAlignment(com.lowagie.text.Element.ALIGN_CENTER);
+            document.add(title);
+
+            document.add(new Paragraph("\n"));
+
+            // Control Number and Date
+            java.time.LocalDate today = java.time.LocalDate.now();
+            String controlNo = "BNG-" + today.getYear() + "-" + request.getId();
+            com.lowagie.text.Font labelFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 11, com.lowagie.text.Font.BOLD);
+            com.lowagie.text.Font normalFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 11);
+
+            document.add(new Paragraph("Control Number: " + controlNo, labelFont));
+            document.add(new Paragraph("Date Issued: " + today.format(java.time.format.DateTimeFormatter.ofPattern("MMMM dd, yyyy"))));
+            document.add(new Paragraph("\n"));
+
+            // Body Content
+            document.add(new Paragraph("TO WHOM IT MAY CONCERN:", labelFont));
+            document.add(new Paragraph("\n"));
+
+            String bodyText = generateDocumentBody(docType, resident);
+            Paragraph body = new Paragraph(bodyText, normalFont);
+            body.setAlignment(com.lowagie.text.Element.ALIGN_JUSTIFIED);
+            document.add(body);
+
+            document.add(new Paragraph("\n\n"));
+
+            // Details Table
+            com.lowagie.text.pdf.PdfPTable detailsTable = new com.lowagie.text.pdf.PdfPTable(2);
+            detailsTable.setWidths(new int[] { 1, 2 });
+            detailsTable.setWidthPercentage(100);
+            detailsTable.getDefaultCell().setBorder(com.lowagie.text.Rectangle.NO_BORDER);
+            detailsTable.getDefaultCell().setPadding(5);
+
+            detailsTable.addCell(new Paragraph("Name:", labelFont));
+            detailsTable.addCell(new Paragraph(resident.getLastName() + ", " + resident.getFirstName(), normalFont));
+            detailsTable.addCell(new Paragraph("Address:", labelFont));
+            detailsTable.addCell(new Paragraph(resident.getAddress(), normalFont));
+            detailsTable.addCell(new Paragraph("Gender/Age:", labelFont));
+            detailsTable.addCell(new Paragraph(resident.getGender(), normalFont));
+            detailsTable.addCell(new Paragraph("Purpose:", labelFont));
+            detailsTable.addCell(new Paragraph(request.getPurpose(), normalFont));
+
+            document.add(detailsTable);
+            document.add(new Paragraph("\n\n"));
+
+            // Signature Block
+            com.lowagie.text.pdf.PdfPTable signTable = new com.lowagie.text.pdf.PdfPTable(2);
+            signTable.setWidths(new int[] { 1, 1 });
+            signTable.setWidthPercentage(100);
+            signTable.getDefaultCell().setBorder(com.lowagie.text.Rectangle.NO_BORDER);
+            signTable.getDefaultCell().setPadding(20);
+
+            signTable.addCell(new Paragraph("_________________________\nBarangay Captain\nAuthorized Signatory", normalFont));
+            signTable.addCell(new Paragraph("_________________________\nBarangay Treasurer\nRecorded by", normalFont));
+
+            document.add(signTable);
+
+            // Footer
+            document.add(new Paragraph("\n"));
+            Paragraph footer = new Paragraph("This is an official document of Barangay San Marino. Unauthorized reproduction is prohibited.", 
+                new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 9, com.lowagie.text.Font.ITALIC));
+            footer.setAlignment(com.lowagie.text.Element.ALIGN_CENTER);
+            document.add(footer);
+
+            document.close();
+            showToast("Document saved to: " + path);
+        } catch (Exception e) {
+            e.printStackTrace();
+            showToast("Error generating document");
+        }
+    }
+
+    private Paragraph createDocumentHeader() {
+        com.lowagie.text.Font headerFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 10, com.lowagie.text.Font.BOLD);
+        com.lowagie.text.Font subHeaderFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 9);
+
+        Paragraph header = new Paragraph();
+        header.setAlignment(com.lowagie.text.Element.ALIGN_CENTER);
+        header.add(new Paragraph("REPUBLIC OF THE PHILIPPINES", headerFont));
+        header.add(new Paragraph("City of Marikina", subHeaderFont));
+        header.add(new Paragraph("Metro Manila", subHeaderFont));
+        header.add(new Paragraph("BARANGAY SAN MARINO", headerFont));
+        header.add(new Paragraph("\n"));
+        header.add(new Paragraph("Address: Barangay San Marino, Marikina, Metro Manila", subHeaderFont));
+        header.add(new Paragraph("Tel/Fax: (02) 123-4567 | Email: barangay.sanmarino@gov.ph", subHeaderFont));
+
+        return header;
+    }
+
+    private String generateDocumentBody(String docType, Resident resident) {
+        switch (docType) {
+            case "Barangay Clearance":
+                return "This is to certify that " + resident.getFirstName() + " " + resident.getLastName() + 
+                       " is a residents of this barangay and has no derogatory records or pending cases before this \n" +
+                       "Barangay. This certification is issued upon request for whatever legal purpose it may serve. " +
+                       "This is not valid without the seal and signature of the Barangay Captain.";
+
+            case "Certificate of Residency":
+                return "This is to certify that " + resident.getFirstName() + " " + resident.getLastName() + 
+                       " with address at " + resident.getAddress() + " is a bonafide resident of this barangay. " +
+                       "This certificate is issued upon request for whatever legal purpose it may serve.";
+
+            case "Indigency Certificate":
+                return "This is to certify that " + resident.getFirstName() + " " + resident.getLastName() + 
+                       " of legal age, " + resident.getGender() + ", a resident of " + resident.getAddress() + 
+                       " belongs to a poor and indigent family in this barangay. This certificate is issued for " +
+                       "financial assistance and government support programs.";
+
+            default:
+                return "This is to certify that " + resident.getFirstName() + " " + resident.getLastName() + 
+                       " is a resident of this barangay.";
+        }
     }
 
     private void showResidentControl(VBox center) {
@@ -1552,9 +2038,9 @@ public class App extends Application {
 
     private VBox createContentBox(String title, String body) {
         var heading = new Label(title);
-        heading.getStyleClass().add("content-box-title");
+        heading.setStyle("-fx-text-fill: " + (darkMode ? "#ffffff" : "#1a1a1a") + "; -fx-font-size: 16; -fx-font-weight: bold;");
         var content = new Label(body);
-        content.getStyleClass().add("content-box-body");
+        content.setStyle("-fx-text-fill: " + (darkMode ? "#d0d0d0" : "#333") + "; -fx-font-size: 12;");
         var box = new VBox(10, heading, content);
         box.getStyleClass().add("content-box");
         return box;
@@ -1578,7 +2064,7 @@ public class App extends Application {
         valueLabel.getStyleClass().add("stat-card-value");
 
         var titleLabel = new Label(title);
-        titleLabel.getStyleClass().add("stat-card-title");
+        titleLabel.setStyle("-fx-text-fill: " + (darkMode ? "#b0b0b0" : "#666") + "; -fx-font-size: 12;");
 
         card.getChildren().addAll(valueLabel, titleLabel);
         return card;
@@ -1597,23 +2083,6 @@ public class App extends Application {
         item.getChildren().addAll(dot, textLabel);
         return item;
     }
-
-    public static class AuditEntry {
-        private final String timestamp;
-        private final String user;
-        private final String action;
-
-        public AuditEntry(String timestamp, String user, String action) {
-            this.timestamp = timestamp;
-            this.user = user;
-            this.action = action;
-        }
-
-        public String getTimestamp() { return timestamp; }
-        public String getUser() { return user; }
-        public String getAction() { return action; }
-    }
-
 
     public static void main(String[] args) {
         Application.launch(App.class, args);

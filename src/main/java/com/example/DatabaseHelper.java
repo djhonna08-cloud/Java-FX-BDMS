@@ -48,6 +48,33 @@ public class DatabaseHelper {
                     "role VARCHAR(50))";
             stmt.execute(createResidents);
 
+            // Create audit_log table for tracking all system operations
+            String createAuditLog = "CREATE TABLE IF NOT EXISTS audit_log (" +
+                    "id INTEGER PRIMARY KEY AUTO_INCREMENT, " +
+                    "timestamp VARCHAR(30) NOT NULL, " +
+                    "username VARCHAR(50) DEFAULT 'System', " +
+                    "action VARCHAR(200) NOT NULL, " +
+                    "details VARCHAR(500), " +
+                    "category VARCHAR(50))";
+            stmt.execute(createAuditLog);
+
+            // Create document_requests table for certificate and clearance tracking
+            String createDocumentRequests = "CREATE TABLE IF NOT EXISTS document_requests (" +
+                    "id INTEGER PRIMARY KEY AUTO_INCREMENT, " +
+                    "resident_id INTEGER NOT NULL, " +
+                    "resident_name VARCHAR(200) NOT NULL, " +
+                    "document_type VARCHAR(100) NOT NULL, " +
+                    "status VARCHAR(20) DEFAULT 'PENDING', " +
+                    "request_date VARCHAR(30) NOT NULL, " +
+                    "approval_date VARCHAR(30), " +
+                    "approved_by VARCHAR(100), " +
+                    "fee DECIMAL(10, 2) DEFAULT 0, " +
+                    "payment_status VARCHAR(20) DEFAULT 'UNPAID', " +
+                    "purpose VARCHAR(500), " +
+                    "notes VARCHAR(500), " +
+                    "FOREIGN KEY (resident_id) REFERENCES residents(id))";
+            stmt.execute(createDocumentRequests);
+
             // Ensure middle_name column exists for older DBs
             try {
                 stmt.execute("ALTER TABLE residents ADD COLUMN middle_name VARCHAR(100)");
@@ -310,6 +337,7 @@ public class DatabaseHelper {
             pstmt.setString(7, resident.getImagePath());
             pstmt.setString(8, resident.getRole());
             pstmt.executeUpdate();
+            logAction("System", "Created new resident: " + resident.getFirstName() + " " + resident.getLastName(), "Resident " + resident.getLastName() + ", " + resident.getFirstName(), "Resident");
         } catch (SQLException e) {
             e.printStackTrace();
         }
@@ -329,6 +357,7 @@ public class DatabaseHelper {
             pstmt.setString(8, resident.getRole());
             pstmt.setInt(9, resident.getId());
             pstmt.executeUpdate();
+            logAction("System", "Updated resident information: " + resident.getFirstName() + " " + resident.getLastName(), "Resident " + resident.getLastName() + ", " + resident.getFirstName(), "Resident");
         } catch (SQLException e) {
             e.printStackTrace();
         }
@@ -340,6 +369,7 @@ public class DatabaseHelper {
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, id);
             pstmt.executeUpdate();
+            logAction("System", "Deleted resident record (ID: " + id + ")", "Resident ID " + id, "Resident");
         } catch (SQLException e) {
             e.printStackTrace();
         }
@@ -444,6 +474,7 @@ public class DatabaseHelper {
             pstmt.setString(1, role.getName());
             pstmt.setString(2, role.getDescription());
             pstmt.executeUpdate();
+            logAction("System", "Created new role: " + role.getName(), role.getDescription(), "Role");
         } catch (SQLException e) {
             e.printStackTrace();
         }
@@ -457,6 +488,7 @@ public class DatabaseHelper {
             pstmt.setString(2, role.getDescription());
             pstmt.setInt(3, role.getId());
             pstmt.executeUpdate();
+            logAction("System", "Updated role: " + role.getName(), role.getDescription(), "Role");
         } catch (SQLException e) {
             e.printStackTrace();
         }
@@ -468,6 +500,7 @@ public class DatabaseHelper {
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, id);
             pstmt.executeUpdate();
+            logAction("System", "Deleted role (ID: " + id + ")", "Role ID " + id, "Role");
         } catch (SQLException e) {
             e.printStackTrace();
         }
@@ -503,5 +536,210 @@ public class DatabaseHelper {
             e.printStackTrace();
         }
         return roles;
+    }
+
+    // ==================== AUDIT LOG OPERATIONS ====================
+
+    public static void logAction(String username, String action, String details, String category) {
+        String sql = "INSERT INTO audit_log(timestamp, username, action, details, category) VALUES(?, ?, ?, ?, ?)";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            java.time.LocalDateTime now = java.time.LocalDateTime.now();
+            java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+            String timestamp = now.format(formatter);
+            
+            pstmt.setString(1, timestamp);
+            pstmt.setString(2, username);
+            pstmt.setString(3, action);
+            pstmt.setString(4, details);
+            pstmt.setString(5, category);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static ObservableList<AuditEntry> getAuditLogs() {
+        ObservableList<AuditEntry> auditLogs = FXCollections.observableArrayList();
+        String sql = "SELECT * FROM audit_log ORDER BY id DESC LIMIT 100";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                AuditEntry entry = new AuditEntry(
+                    rs.getInt("id"),
+                    rs.getString("timestamp"),
+                    rs.getString("username"),
+                    rs.getString("action"),
+                    rs.getString("details"),
+                    rs.getString("category")
+                );
+                auditLogs.add(entry);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return auditLogs;
+    }
+
+    public static ObservableList<AuditEntry> getRecentActivity(int limit) {
+        ObservableList<AuditEntry> activity = FXCollections.observableArrayList();
+        String sql = "SELECT * FROM audit_log ORDER BY id DESC LIMIT ?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, limit);
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                AuditEntry entry = new AuditEntry(
+                    rs.getString("timestamp"),
+                    rs.getString("username"),
+                    rs.getString("action")
+                );
+                activity.add(entry);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return activity;
+    }
+
+    // ==================== DOCUMENT REQUEST OPERATIONS ====================
+
+    public static int createDocumentRequest(DocumentRequest request) {
+        String sql = "INSERT INTO document_requests(resident_id, resident_name, document_type, status, request_date, fee, payment_status, purpose, notes) " +
+                     "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             PreparedStatement pstmt = conn.prepareStatement(sql, java.sql.Statement.RETURN_GENERATED_KEYS)) {
+            java.time.LocalDate today = java.time.LocalDate.now();
+            java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd");
+            
+            pstmt.setInt(1, request.getResidentId());
+            pstmt.setString(2, request.getResidentName());
+            pstmt.setString(3, request.getDocumentType());
+            pstmt.setString(4, "PENDING");
+            pstmt.setString(5, today.format(formatter));
+            pstmt.setDouble(6, request.getFee());
+            pstmt.setString(7, "UNPAID");
+            pstmt.setString(8, request.getPurpose());
+            pstmt.setString(9, request.getNotes());
+            
+            pstmt.executeUpdate();
+            
+            ResultSet rs = pstmt.getGeneratedKeys();
+            if (rs.next()) {
+                int requestId = rs.getInt(1);
+                logAction("System", "Created document request: " + request.getDocumentType(), 
+                         request.getResidentName(), "Document");
+                return requestId;
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return -1;
+    }
+
+    public static void approveDocumentRequest(int requestId, String approvedBy) {
+        String sql = "UPDATE document_requests SET status = ?, approval_date = ?, approved_by = ? WHERE id = ?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            java.time.LocalDate today = java.time.LocalDate.now();
+            java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd");
+            
+            pstmt.setString(1, "APPROVED");
+            pstmt.setString(2, today.format(formatter));
+            pstmt.setString(3, approvedBy);
+            pstmt.setInt(4, requestId);
+            pstmt.executeUpdate();
+            
+            logAction("System", "Approved document request (ID: " + requestId + ")", "Request ID " + requestId, "Document");
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void recordPayment(int requestId) {
+        String sql = "UPDATE document_requests SET payment_status = ? WHERE id = ?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, "PAID");
+            pstmt.setInt(2, requestId);
+            pstmt.executeUpdate();
+            
+            logAction("System", "Recorded payment for document request (ID: " + requestId + ")", "Request ID " + requestId, "Payment");
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void completeDocumentRequest(int requestId) {
+        String sql = "UPDATE document_requests SET status = ? WHERE id = ?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, "COMPLETED");
+            pstmt.setInt(2, requestId);
+            pstmt.executeUpdate();
+            
+            logAction("System", "Completed document request (ID: " + requestId + ")", "Request ID " + requestId, "Document");
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static ObservableList<DocumentRequest> getAllDocumentRequests() {
+        ObservableList<DocumentRequest> requests = FXCollections.observableArrayList();
+        String sql = "SELECT * FROM document_requests ORDER BY request_date DESC";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                DocumentRequest request = new DocumentRequest(
+                    rs.getInt("id"),
+                    rs.getInt("resident_id"),
+                    rs.getString("resident_name"),
+                    rs.getString("document_type"),
+                    rs.getString("status"),
+                    rs.getString("request_date"),
+                    rs.getString("approval_date"),
+                    rs.getString("approved_by"),
+                    rs.getDouble("fee"),
+                    rs.getString("payment_status"),
+                    rs.getString("purpose"),
+                    rs.getString("notes")
+                );
+                requests.add(request);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return requests;
+    }
+
+    public static Optional<DocumentRequest> getDocumentRequestById(int id) {
+        String sql = "SELECT * FROM document_requests WHERE id = ?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, id);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                DocumentRequest request = new DocumentRequest(
+                    rs.getInt("id"),
+                    rs.getInt("resident_id"),
+                    rs.getString("resident_name"),
+                    rs.getString("document_type"),
+                    rs.getString("status"),
+                    rs.getString("request_date"),
+                    rs.getString("approval_date"),
+                    rs.getString("approved_by"),
+                    rs.getDouble("fee"),
+                    rs.getString("payment_status"),
+                    rs.getString("purpose"),
+                    rs.getString("notes")
+                );
+                return Optional.of(request);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return Optional.empty();
     }
 }
