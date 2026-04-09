@@ -20,6 +20,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import javafx.scene.shape.Rectangle;
 import javafx.stage.Stage;
+import javafx.stage.FileChooser;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.util.Duration;
@@ -42,12 +43,14 @@ import javafx.embed.swing.SwingFXUtils;
 import com.lowagie.text.Document;
 import com.lowagie.text.DocumentException;
 import com.lowagie.text.Paragraph;
+import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
 
 import java.io.IOException;
 import java.io.FileOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.io.File;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.io.ByteArrayOutputStream;
@@ -103,9 +106,9 @@ public class App extends Application {
         userSubmenuOpen = loadSubmenuStateFromDisk();
         loginScene = createLoginScene();
         stage.setScene(loginScene);
-        stage.setTitle("BDMS");
-        stage.setMinWidth(900);
-        stage.setMinHeight(600);
+        stage.setTitle("Baranggay ");
+        stage.setMinWidth(1000);
+        stage.setMinHeight(700);
         stage.show();
     }
 
@@ -331,6 +334,10 @@ public class App extends Application {
                 setActiveNav(usersBtn);
                 if ("Audit Log".equals(item)) {
                     showAuditLog(center);
+                } else if ("Manage Roles".equals(item)) {
+                    showManageRoles(center);
+                } else if ("Permissions".equals(item)) {
+                    showPermissions(center);
                 } else {
                     updateDashboardContent(center, "User & Access Management", "Selected: " + item);
                 }
@@ -586,13 +593,13 @@ public class App extends Application {
             createActivityItem("System backup completed")
         );
         
-        // Create Gender Distribution Chart
-        var genderData = DatabaseHelper.getGenderDistribution();
+        // Create Age Distribution Chart
+        var ageData = DatabaseHelper.getAgeDistribution();
         ObservableList<PieChart.Data> pieChartData = FXCollections.observableArrayList();
-        genderData.forEach((gender, count) -> pieChartData.add(new PieChart.Data(gender + " (" + count + ")", count)));
+        ageData.forEach((ageGroup, count) -> pieChartData.add(new PieChart.Data(ageGroup + " (" + count + ")", count)));
 
         var genderDistributionChart = new PieChart(pieChartData);
-        genderDistributionChart.setTitle("Resident Distribution by Gender");
+        genderDistributionChart.setTitle("Resident Distribution by Age");
         genderDistributionChart.setLegendVisible(true);
         genderDistributionChart.setLabelsVisible(false); // Labels on slices can get crowded. Legend is better.
 
@@ -602,6 +609,223 @@ public class App extends Application {
 
         var content = new VBox(24, statsGrid, bottomRow);
         updateDashboardContent(center, "Analytics & Overview", content);
+    }
+
+    private void showManageRoles(VBox center) {
+        var rolesTable = new TableView<Role>();
+        rolesTable.getStyleClass().add("table-view");
+        rolesTable.setPrefHeight(400);
+
+        // Columns
+        TableColumn<Role, Number> idCol = new TableColumn<>("ID");
+        idCol.setCellValueFactory(new PropertyValueFactory<>("id"));
+        idCol.setPrefWidth(60);
+
+        TableColumn<Role, String> nameCol = new TableColumn<>("Role Name");
+        nameCol.setCellValueFactory(new PropertyValueFactory<>("name"));
+        nameCol.setPrefWidth(180);
+
+        TableColumn<Role, String> descriptionCol = new TableColumn<>("Description");
+        descriptionCol.setCellValueFactory(new PropertyValueFactory<>("description"));
+        descriptionCol.setPrefWidth(350);
+
+        rolesTable.getColumns().setAll(List.of(idCol, nameCol, descriptionCol));
+
+        // Toolbar buttons
+        Button addButton = new Button("Add Role");
+        addButton.setGraphic(new FontIcon(FontAwesomeSolid.PLUS_CIRCLE));
+
+        Button editButton = new Button("Edit Role");
+        editButton.setGraphic(new FontIcon(FontAwesomeSolid.PENCIL_ALT));
+        editButton.setDisable(true);
+
+        Button deleteButton = new Button("Delete Role");
+        deleteButton.setGraphic(new FontIcon(FontAwesomeSolid.TRASH));
+        deleteButton.setDisable(true);
+
+        rolesTable.getSelectionModel().selectedItemProperty().addListener((obs, oldSelection, newSelection) -> {
+            boolean isSelected = newSelection != null;
+            editButton.setDisable(!isSelected);
+            deleteButton.setDisable(!isSelected);
+        });
+
+        addButton.setOnAction(e -> {
+            showRoleDialog(null).ifPresent(role -> {
+                DatabaseHelper.addRole(role);
+                loadRoleData(rolesTable);
+                showToast("Role created successfully.");
+            });
+        });
+
+        editButton.setOnAction(e -> {
+            Role selected = rolesTable.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                showRoleDialog(selected).ifPresent(role -> {
+                    DatabaseHelper.updateRole(role);
+                    loadRoleData(rolesTable);
+                    showToast("Role updated successfully.");
+                });
+            }
+        });
+
+        deleteButton.setOnAction(e -> {
+            Role selected = rolesTable.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+                confirm.setTitle("Delete Role");
+                confirm.setHeaderText("Are you sure you want to delete the role \"" + selected.getName() + "\"?");
+                confirm.setContentText("This action cannot be undone. Residents with this role will be unaffected.");
+                confirm.showAndWait().ifPresent(response -> {
+                    if (response == ButtonType.OK) {
+                        DatabaseHelper.deleteRole(selected.getId());
+                        loadRoleData(rolesTable);
+                        showToast("Role deleted successfully.");
+                    }
+                });
+            }
+        });
+
+        ToolBar toolBar = new ToolBar(addButton, editButton, deleteButton);
+        toolBar.setStyle("-fx-background-color: transparent; -fx-padding: 0;");
+
+        var content = new VBox(12, toolBar, rolesTable);
+        VBox.setVgrow(rolesTable, Priority.ALWAYS);
+        updateDashboardContent(center, "Manage Roles", content);
+
+        // Load roles
+        loadRoleData(rolesTable);
+    }
+
+    private void loadRoleData(TableView<Role> table) {
+        ObservableList<Role> roles = DatabaseHelper.getAllRoles();
+        table.setItems(roles);
+    }
+
+    private Optional<Role> showRoleDialog(Role existingRole) {
+        Dialog<Role> dialog = new Dialog<>();
+        dialog.setTitle(existingRole == null ? "Add New Role" : "Edit Role");
+        dialog.setHeaderText("Please fill in the role details.");
+
+        ButtonType saveButtonType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(20, 150, 10, 10));
+
+        TextField nameField = new TextField();
+        nameField.setPromptText("E.g., Barangay Captain");
+        nameField.setMaxWidth(Double.MAX_VALUE);
+
+        TextArea descriptionField = new TextArea();
+        descriptionField.setPromptText("Enter role description");
+        descriptionField.setWrapText(true);
+        descriptionField.setPrefRowCount(5);
+
+        grid.add(new Label("Role Name:"), 0, 0);
+        grid.add(nameField, 1, 0);
+        grid.add(new Label("Description:"), 0, 1);
+        grid.add(descriptionField, 1, 1);
+
+        if (existingRole != null) {
+            nameField.setText(existingRole.getName());
+            descriptionField.setText(existingRole.getDescription());
+        }
+
+        // Validation
+        Node saveButton = dialog.getDialogPane().lookupButton(saveButtonType);
+        var emptyBinding = Bindings.createBooleanBinding(() ->
+                nameField.getText().trim().isEmpty() ||
+                descriptionField.getText().trim().isEmpty(),
+            nameField.textProperty(),
+            descriptionField.textProperty()
+        );
+        saveButton.disableProperty().bind(emptyBinding);
+
+        dialog.getDialogPane().setContent(grid);
+
+        dialog.setResultConverter(dialogButton -> {
+            if (dialogButton == saveButtonType) {
+                int id = (existingRole == null) ? 0 : existingRole.getId();
+                Role r = new Role(id, nameField.getText().trim(), descriptionField.getText().trim());
+                return r;
+            }
+            return null;
+        });
+
+        return dialog.showAndWait();
+    }
+
+    private void showPermissions(VBox center) {
+        var permissionsTable = new TableView<Map.Entry<String, Map<String, String>>>();
+        permissionsTable.getStyleClass().add("table-view");
+
+        TableColumn<Map.Entry<String, Map<String, String>>, String> roleCol = new TableColumn<>("Role");
+        roleCol.setCellValueFactory(cellData -> new javafx.beans.property.SimpleStringProperty(cellData.getValue().getKey()));
+        roleCol.setPrefWidth(150);
+
+        TableColumn<Map.Entry<String, Map<String, String>>, String> residentDataCol = new TableColumn<>("Resident Data");
+        residentDataCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Resident Data")));
+        residentDataCol.setPrefWidth(120);
+        residentDataCol.setCellFactory(param -> createPermissionCell());
+
+        TableColumn<Map.Entry<String, Map<String, String>>, String> financialsCol = new TableColumn<>("Financials");
+        financialsCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Financials")));
+        financialsCol.setPrefWidth(120);
+        financialsCol.setCellFactory(param -> createPermissionCell());
+
+        TableColumn<Map.Entry<String, Map<String, String>>, String> blotterCol = new TableColumn<>("Blotter/Legal");
+        blotterCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Blotter/Legal")));
+        blotterCol.setPrefWidth(120);
+        blotterCol.setCellFactory(param -> createPermissionCell());
+
+        TableColumn<Map.Entry<String, Map<String, String>>, String> systemCol = new TableColumn<>("System Settings");
+        systemCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("System Settings")));
+        systemCol.setPrefWidth(120);
+        systemCol.setCellFactory(param -> createPermissionCell());
+
+        permissionsTable.getColumns().setAll(List.of(roleCol, residentDataCol, financialsCol, blotterCol, systemCol));
+
+        // Fetch roles dynamically from the database
+        ObservableList<Role> allRoles = DatabaseHelper.getAllRoles();
+        ObservableList<Map.Entry<String, Map<String, String>>> permissionsData = FXCollections.observableArrayList();
+        for (Role role : allRoles) {
+            Map<String, String> permissions = DatabaseHelper.getPermissions(role.getName());
+            permissionsData.add(Map.entry(role.getName(), permissions));
+        }
+        permissionsTable.setItems(permissionsData);
+
+        var infoLabel = new Label("Permission Levels: None, View Only, Manage, Full Access");
+        infoLabel.setStyle("-fx-font-size: 11; -fx-text-fill: #666;");
+
+        var content = new VBox(12, infoLabel, permissionsTable);
+        VBox.setVgrow(permissionsTable, Priority.ALWAYS);
+        updateDashboardContent(center, "Role Permissions", content);
+    }
+
+    private TableCell<Map.Entry<String, Map<String, String>>, String> createPermissionCell() {
+        return new TableCell<Map.Entry<String, Map<String, String>>, String>() {
+            private final ComboBox<String> comboBox = new ComboBox<>();
+            {
+                comboBox.getItems().addAll("None", "View Only", "Manage", "Full Access");
+                comboBox.setStyle("-fx-font-size: 11;");
+            }
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setGraphic(null);
+                } else {
+                    comboBox.setValue(item);
+                    setGraphic(comboBox);
+                }
+            }
+        };
     }
 
     private void showAuditLog(VBox center) {
@@ -639,6 +863,27 @@ public class App extends Application {
         residentTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
         residentTable.setPrefHeight(500);
 
+        TableColumn<Resident, String> photoCol = new TableColumn<>("Photo");
+        photoCol.setPrefWidth(60);
+        photoCol.setCellValueFactory(new PropertyValueFactory<>("imagePath"));
+        photoCol.setCellFactory(param -> new TableCell<Resident, String>() {
+            private final ImageView imageView = new ImageView();
+            @Override
+            protected void updateItem(String path, boolean empty) {
+                super.updateItem(path, empty);
+                if (empty || path == null || path.isEmpty()) {
+                    setGraphic(null);
+                } else {
+                    try {
+                        imageView.setImage(new Image(new File(path).toURI().toString(), 40, 40, true, true));
+                        setGraphic(imageView);
+                    } catch (Exception e) {
+                        setGraphic(null);
+                    }
+                }
+            }
+        });
+
         TableColumn<Resident, String> nameCol = new TableColumn<>("Name");
         nameCol.setCellValueFactory(cellData -> new javafx.beans.binding.StringBinding() {
             { bind(cellData.getValue().firstNameProperty(), cellData.getValue().lastNameProperty()); }
@@ -665,7 +910,7 @@ public class App extends Application {
         addressCol.setId("address");
         addressCol.setPrefWidth(300);
 
-        residentTable.getColumns().setAll(List.of(nameCol, birthDateCol, genderCol, addressCol));
+        residentTable.getColumns().setAll(List.of(photoCol, nameCol, birthDateCol, genderCol, addressCol));
 
         Button addButton = new Button("Add Resident");
         addButton.setGraphic(new FontIcon(FontAwesomeSolid.PLUS_CIRCLE));
@@ -679,20 +924,20 @@ public class App extends Application {
         Button idButton = new Button("Print ID");
         idButton.setGraphic(new FontIcon(FontAwesomeSolid.ID_CARD));
 
-        Button viewQrButton = new Button("View QR");
-        viewQrButton.setGraphic(new FontIcon(FontAwesomeSolid.QRCODE));
+        Button viewIdBtn = new Button("View ID Card");
+        viewIdBtn.setGraphic(new FontIcon(FontAwesomeSolid.ADDRESS_CARD));
 
         editButton.setDisable(true);
         deleteButton.setDisable(true);
         idButton.setDisable(true);
-        viewQrButton.setDisable(true);
+        viewIdBtn.setDisable(true);
 
         residentTable.getSelectionModel().selectedItemProperty().addListener((obs, oldSelection, newSelection) -> {
             boolean isSelected = newSelection != null;
             editButton.setDisable(!isSelected);
             deleteButton.setDisable(!isSelected);
             idButton.setDisable(!isSelected);
-            viewQrButton.setDisable(!isSelected);
+            viewIdBtn.setDisable(!isSelected);
         });
 
         // Custom sort policy for server-side sorting with pagination
@@ -754,14 +999,14 @@ public class App extends Application {
             }
         });
 
-        viewQrButton.setOnAction(e -> {
+        viewIdBtn.setOnAction(e -> {
             Resident selected = residentTable.getSelectionModel().getSelectedItem();
             if (selected != null) {
-                showQRCodeDialog(selected);
+                showIDCardDialog(selected);
             }
         });
 
-        ToolBar toolBar = new ToolBar(addButton, editButton, deleteButton, new Separator(Orientation.VERTICAL), idButton, viewQrButton);
+        ToolBar toolBar = new ToolBar(addButton, editButton, deleteButton, new Separator(Orientation.VERTICAL), idButton, viewIdBtn);
         toolBar.setStyle("-fx-background-color: transparent; -fx-padding: 0;");
 
         var exportButton = new Button("📄 Export to PDF");
@@ -837,22 +1082,50 @@ public class App extends Application {
             PdfWriter.getInstance(document, new FileOutputStream(path));
             document.open();
 
-            // Add Resident Info
-            var font = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 10, com.lowagie.text.Font.BOLD);
-            document.add(new Paragraph("BARANGAY ID SYSTEM", new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 8)));
-            document.add(new Paragraph(resident.getLastName() + ", " + resident.getFirstName(), font));
-            document.add(new Paragraph("Address: " + resident.getAddress(), new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 8)));
+            var titleFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 8, com.lowagie.text.Font.BOLD);
+            var labelFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 7, com.lowagie.text.Font.BOLD);
+            var valueFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 7);
 
-            // Generate QR Code: "RES:" + ID
+            document.add(new Paragraph("BARANGAY SAN MARINO ID CARD", titleFont));
+            document.add(new Paragraph(" "));
+
+            if (resident.getImagePath() != null && !resident.getImagePath().isBlank()) {
+                File photoFile = new File(resident.getImagePath());
+                if (photoFile.exists()) {
+                    com.lowagie.text.Image photoImage = com.lowagie.text.Image.getInstance(photoFile.getAbsolutePath());
+                    photoImage.scaleAbsolute(80, 80);
+                    photoImage.setAbsolutePosition(20, 55);
+                    document.add(photoImage);
+                }
+            }
+
+            com.lowagie.text.pdf.PdfPTable infoTable = new com.lowagie.text.pdf.PdfPTable(2);
+            infoTable.setWidths(new int[] { 1, 2 });
+            infoTable.setWidthPercentage(100);
+            infoTable.getDefaultCell().setBorder(com.lowagie.text.Rectangle.NO_BORDER);
+
+            infoTable.addCell(new Paragraph("Name:", labelFont));
+            infoTable.addCell(new Paragraph(resident.getLastName() + ", " + resident.getFirstName() + (resident.getMiddleName() != null && !resident.getMiddleName().isBlank() ? " " + resident.getMiddleName() : ""), valueFont));
+            infoTable.addCell(new Paragraph("Gender:", labelFont));
+            infoTable.addCell(new Paragraph(resident.getGender(), valueFont));
+            infoTable.addCell(new Paragraph("Birthdate:", labelFont));
+            infoTable.addCell(new Paragraph(resident.getBirthDate(), valueFont));
+            infoTable.addCell(new Paragraph("Address:", labelFont));
+            infoTable.addCell(new Paragraph(resident.getAddress(), valueFont));
+            infoTable.addCell(new Paragraph("ID No:", labelFont));
+            infoTable.addCell(new Paragraph(String.valueOf(resident.getId()), valueFont));
+
+            document.add(infoTable);
+            document.add(new Paragraph(" "));
+
             String qrCodeText = "RES:" + resident.getId();
             QRCodeWriter qrCodeWriter = new QRCodeWriter();
-            BitMatrix bitMatrix = qrCodeWriter.encode(qrCodeText, BarcodeFormat.QR_CODE, 100, 100);
-            
+            BitMatrix bitMatrix = qrCodeWriter.encode(qrCodeText, BarcodeFormat.QR_CODE, 80, 80);
             ByteArrayOutputStream pngOutputStream = new ByteArrayOutputStream();
             MatrixToImageWriter.writeToStream(bitMatrix, "PNG", pngOutputStream);
-            
             com.lowagie.text.Image qrImage = com.lowagie.text.Image.getInstance(pngOutputStream.toByteArray());
-            qrImage.setAbsolutePosition(150, 40); // Position on the right side of the card
+            qrImage.setAbsolutePosition(150, 20);
+            qrImage.scaleAbsolute(60, 60);
             document.add(qrImage);
 
             document.close();
@@ -876,6 +1149,15 @@ public class App extends Application {
         grid.setVgap(10);
         grid.setPadding(new Insets(20, 150, 10, 10));
 
+        // --- Image Upload Section ---
+        ImageView photoPreview = new ImageView();
+        photoPreview.setFitWidth(100);
+        photoPreview.setFitHeight(100);
+        photoPreview.getStyleClass().add("image-preview-frame");
+        Button uploadBtn = new Button("Upload Photo");
+        TextField imagePathField = new TextField();
+        imagePathField.setEditable(false);
+
         TextField firstName = new TextField();
         firstName.setPromptText("First Name");
         TextField middleName = new TextField();
@@ -895,18 +1177,31 @@ public class App extends Application {
         address.setWrapText(true);
         address.setPrefRowCount(4);
 
-        grid.add(new Label("First Name:"), 0, 0);
-        grid.add(firstName, 1, 0);
-        grid.add(new Label("Middle Name:"), 0, 1);
-        grid.add(middleName, 1, 1);
-        grid.add(new Label("Last Name:"), 0, 2);
-        grid.add(lastName, 1, 2);
-        grid.add(new Label("Birth Date:"), 0, 3);
-        grid.add(birthDate, 1, 3);
-        grid.add(new Label("Gender:"), 0, 4);
-        grid.add(gender, 1, 4);
-        grid.add(new Label("Address:"), 0, 5);
-        grid.add(address, 1, 5);
+        uploadBtn.setOnAction(e -> {
+            FileChooser fileChooser = new FileChooser();
+            fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Image Files", "*.png", "*.jpg", "*.jpeg"));
+            File file = fileChooser.showOpenDialog(primaryStage);
+            if (file != null) {
+                imagePathField.setText(file.getAbsolutePath());
+                photoPreview.setImage(new Image(file.toURI().toString()));
+            }
+        });
+
+        grid.add(new Label("Resident Photo:"), 0, 0);
+        grid.add(new VBox(5, photoPreview, uploadBtn), 1, 0);
+        
+        grid.add(new Label("First Name:"), 0, 1);
+        grid.add(firstName, 1, 1);
+        grid.add(new Label("Middle Name:"), 0, 2);
+        grid.add(middleName, 1, 2);
+        grid.add(new Label("Last Name:"), 0, 3);
+        grid.add(lastName, 1, 3);
+        grid.add(new Label("Birth Date:"), 0, 4);
+        grid.add(birthDate, 1, 4);
+        grid.add(new Label("Gender:"), 0, 5);
+        grid.add(gender, 1, 5);
+        grid.add(new Label("Address:"), 0, 6);
+        grid.add(address, 1, 6);
 
         if (existingResident != null) {
             firstName.setText(existingResident.getFirstName());
@@ -919,6 +1214,10 @@ public class App extends Application {
             }
             gender.setValue(existingResident.getGender());
             address.setText(existingResident.getAddress());
+            if (existingResident.getImagePath() != null) {
+                imagePathField.setText(existingResident.getImagePath());
+                photoPreview.setImage(new Image(new File(existingResident.getImagePath()).toURI().toString()));
+            }
         } else {
             birthDate.setValue(LocalDate.now());
         }
@@ -949,8 +1248,10 @@ public class App extends Application {
         dialog.setResultConverter(dialogButton -> {
             if (dialogButton == saveButtonType) {
                 int id = (existingResident == null) ? 0 : existingResident.getId();
-                return new Resident(id, firstName.getText(), middleName.getText(), lastName.getText(), 
+                Resident r = new Resident(id, firstName.getText(), middleName.getText(), lastName.getText(), 
                         birthDate.getValue().toString(), gender.getValue(), address.getText());
+                r.setImagePath(imagePathField.getText());
+                return r;
             }
             return null;
         });
@@ -958,26 +1259,88 @@ public class App extends Application {
         return dialog.showAndWait();
     }
 
-    private void showQRCodeDialog(Resident resident) {
+    private void showIDCardDialog(Resident resident) {
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("Resident Identification Card");
+
+        // Main Card Container (CR-80 Aspect Ratio)
+        VBox card = new VBox();
+        card.setPrefSize(450, 280);
+        card.setStyle("-fx-background-color: white; -fx-border-color: #cbd5e1; -fx-border-width: 1; -fx-border-radius: 15; -fx-background-radius: 15; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.2), 10, 0, 0, 5);");
+
+        // Header - Government Style
+        HBox header = new HBox(15);
+        header.setPadding(new Insets(15));
+        header.setAlignment(Pos.CENTER_LEFT);
+        header.setStyle("-fx-background-color: linear-gradient(to right, #1e3a8a, #3b82f6); -fx-background-radius: 15 15 0 0;");
+        
+        Label govTitle = new Label("REPUBLIC OF THE PHILIPPINES\nBarangay San Marino Resident ID");
+        govTitle.setStyle("-fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 14;");
+        header.getChildren().add(govTitle);
+
+        // Body Content
+        HBox body = new HBox(20);
+        body.setPadding(new Insets(20));
+        
+        // Photo
+        ImageView photo = new ImageView();
+        photo.setFitWidth(110);
+        photo.setFitHeight(110);
+        photo.setPreserveRatio(true);
+        photo.setSmooth(true);
+        if (resident.getImagePath() != null && !resident.getImagePath().isBlank()) {
+            File photoFile = new File(resident.getImagePath());
+            if (photoFile.exists()) {
+                photo.setImage(new Image(photoFile.toURI().toString()));
+            }
+        }
+        if (photo.getImage() == null) {
+            var placeholderUrl = getClass().getResource("placeholder-user.png");
+            if (placeholderUrl != null) {
+                photo.setImage(new Image(placeholderUrl.toExternalForm()));
+            }
+        }
+        photo.setStyle("-fx-border-color: #1e3a8a; -fx-border-width: 2;");
+
+        // Details
+        VBox details = new VBox(8);
+        details.setPrefWidth(280);
+        Label nameLbl = new Label(resident.getLastName().toUpperCase() + ", " + resident.getFirstName().toUpperCase() + (resident.getMiddleName() != null && !resident.getMiddleName().isBlank() ? " " + resident.getMiddleName().toUpperCase() : ""));
+        nameLbl.setStyle("-fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: #1e293b;");
+        
+        Label idLbl = new Label("ID: " + resident.getId());
+        idLbl.setStyle("-fx-font-size: 11; -fx-font-weight: bold;");
+        Label genderLbl = new Label("Gender: " + resident.getGender());
+        Label dobLbl = new Label("Birthdate: " + resident.getBirthDate());
+        Label addrLbl = new Label("Address: " + resident.getAddress());
+        addrLbl.setWrapText(true);
+        addrLbl.setMaxWidth(260);
+
+        details.getChildren().addAll(nameLbl, idLbl, genderLbl, dobLbl, addrLbl);
+
+        // QR Code
+        VBox qrBox = new VBox(8);
+        qrBox.setAlignment(Pos.CENTER);
         try {
             String qrCodeText = "RES:" + resident.getId();
             QRCodeWriter qrCodeWriter = new QRCodeWriter();
-            BitMatrix bitMatrix = qrCodeWriter.encode(qrCodeText, BarcodeFormat.QR_CODE, 300, 300);
-            
-            BufferedImage bufferedImage = MatrixToImageWriter.toBufferedImage(bitMatrix);
-            Image fxImage = SwingFXUtils.toFXImage(bufferedImage, null);
-            
-            ImageView imageView = new ImageView(fxImage);
-            
-            Alert alert = new Alert(Alert.AlertType.INFORMATION);
-            alert.setTitle("Resident QR Code");
-            alert.setHeaderText(resident.getFirstName() + " " + resident.getLastName());
-            alert.getDialogPane().setContent(new StackPane(imageView));
-            alert.showAndWait();
-        } catch (Exception e) {
-            e.printStackTrace();
-            showAlert("Error", "Could not generate QR code.");
-        }
+            BitMatrix bitMatrix = qrCodeWriter.encode(qrCodeText, BarcodeFormat.QR_CODE, 90, 90);
+            Image qrImg = SwingFXUtils.toFXImage(MatrixToImageWriter.toBufferedImage(bitMatrix), null);
+            var qrView = new ImageView(qrImg);
+            qrView.setFitWidth(90);
+            qrView.setFitHeight(90);
+            qrBox.getChildren().add(qrView);
+            Label idLabel = new Label("ID: " + resident.getId());
+            idLabel.setStyle("-fx-font-family: monospace; -fx-font-size: 10;");
+            qrBox.getChildren().add(idLabel);
+        } catch (Exception ignored) {}
+
+        body.getChildren().addAll(photo, details, qrBox);
+        card.getChildren().addAll(header, body);
+
+        dialog.getDialogPane().setContent(new StackPane(card));
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        dialog.showAndWait();
     }
 
     private void startCameraScan() {
@@ -1254,7 +1617,7 @@ public class App extends Application {
 
 
     public static void main(String[] args) {
-        launch();
+        Application.launch(App.class, args);
     }
 
 }

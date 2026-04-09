@@ -43,7 +43,9 @@ public class DatabaseHelper {
                     "last_name VARCHAR(100) NOT NULL, " +
                     "birth_date VARCHAR(20), " +
                     "gender VARCHAR(10), " +
-                    "address VARCHAR(500))";
+                    "address VARCHAR(500), " +
+                    "image_path VARCHAR(500), " +
+                    "role VARCHAR(50))";
             stmt.execute(createResidents);
 
             // Ensure middle_name column exists for older DBs
@@ -51,6 +53,46 @@ public class DatabaseHelper {
                 stmt.execute("ALTER TABLE residents ADD COLUMN middle_name VARCHAR(100)");
             } catch (SQLException ignored) {
                 // Column probably already exists; ignore
+            }
+
+            // Ensure image_path column exists for older DBs
+            try {
+                stmt.execute("ALTER TABLE residents ADD COLUMN image_path VARCHAR(500)");
+            } catch (SQLException ignored) {
+                // Column probably already exists; ignore
+            }
+
+            // Ensure role column exists for older DBs
+            try {
+                stmt.execute("ALTER TABLE residents ADD COLUMN role VARCHAR(50)");
+            } catch (SQLException ignored) {
+                // Column probably already exists; ignore
+            }
+
+            // Create roles table for managing custom roles
+            String createRoles = "CREATE TABLE IF NOT EXISTS roles (" +
+                    "id INTEGER PRIMARY KEY AUTO_INCREMENT, " +
+                    "name VARCHAR(100) UNIQUE NOT NULL, " +
+                    "description VARCHAR(500))";
+            stmt.execute(createRoles);
+
+            // Initialize default roles
+            try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM roles")) {
+                if (rs.next() && rs.getInt(1) == 0) {
+                    System.out.println("Roles table is empty. Inserting default roles...");
+                    String[] defaultRoles = {
+                        "INSERT INTO roles (name, description) VALUES ('Barangay Captain', 'Head of the barangay with full administrative access')",
+                        "INSERT INTO roles (name, description) VALUES ('Barangay Secretary', 'Manages resident data, legal cases, and correspondence')",
+                        "INSERT INTO roles (name, description) VALUES ('Barangay Treasurer', 'Manages financial records and budgets')",
+                        "INSERT INTO roles (name, description) VALUES ('Kagawads', 'Barangay council members with limited access')",
+                        "INSERT INTO roles (name, description) VALUES ('Barangay Health Workers', 'Manages health and resident information')",
+                        "INSERT INTO roles (name, description) VALUES ('Barangay Tanods', 'Peace and order officers with basic access')"
+                    };
+                    for (String insert : defaultRoles) {
+                        stmt.execute(insert);
+                    }
+                    System.out.println("Default roles inserted.");
+                }
             }
 
             // Insert sample users only if the table is empty. This is a more robust pattern.
@@ -126,14 +168,42 @@ public class DatabaseHelper {
                 permissions.put("Blotter/Legal", "View Only");
                 permissions.put("System Settings", "None");
                 break;
-            case "Resident":
-                permissions.put("Resident Data", "Own Only");
+            case "Barangay Captain":
+                permissions.put("Resident Data", "Full Access");
+                permissions.put("Financials", "Full Access");
+                permissions.put("Blotter/Legal", "Full Access");
+                permissions.put("System Settings", "Full Access");
+                break;
+            case "Barangay Secretary":
+                permissions.put("Resident Data", "Manage");
+                permissions.put("Financials", "View Only");
+                permissions.put("Blotter/Legal", "Manage");
+                permissions.put("System Settings", "None");
+                break;
+            case "Barangay Treasurer":
+                permissions.put("Resident Data", "View Only");
+                permissions.put("Financials", "Manage");
+                permissions.put("Blotter/Legal", "None");
+                permissions.put("System Settings", "None");
+                break;
+            case "Kagawads":
+                permissions.put("Resident Data", "View Only");
+                permissions.put("Financials", "View Only");
+                permissions.put("Blotter/Legal", "View Only");
+                permissions.put("System Settings", "None");
+                break;
+            case "Barangay Health Workers":
+                permissions.put("Resident Data", "Manage");
                 permissions.put("Financials", "None");
                 permissions.put("Blotter/Legal", "None");
                 permissions.put("System Settings", "None");
                 break;
-            default:
-                permissions.put("All", "None");
+            case "Barangay Tanods":
+                permissions.put("Resident Data", "View Only");
+                permissions.put("Financials", "None");
+                permissions.put("Blotter/Legal", "Manage");
+                permissions.put("System Settings", "None");
+                break;
         }
         return permissions;
     }
@@ -209,14 +279,17 @@ public class DatabaseHelper {
 
             ResultSet rs = pstmt.executeQuery();
             while (rs.next()) {
-                residents.add(new Resident(
+                Resident resident = new Resident(
                         rs.getInt("id"),
                         rs.getString("first_name"),
                         rs.getString("middle_name"),
                         rs.getString("last_name"),
                         rs.getString("birth_date"),
                         rs.getString("gender"),
-                        rs.getString("address")));
+                        rs.getString("address"));
+                resident.setImagePath(rs.getString("image_path"));
+                resident.setRole(rs.getString("role"));
+                residents.add(resident);
             }
         } catch (SQLException e) {
             e.printStackTrace();
@@ -225,7 +298,7 @@ public class DatabaseHelper {
     }
 
     public static void addResident(Resident resident) {
-        String sql = "INSERT INTO residents(first_name, middle_name, last_name, birth_date, gender, address) VALUES(?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO residents(first_name, middle_name, last_name, birth_date, gender, address, image_path, role) VALUES(?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, resident.getFirstName());
@@ -234,6 +307,8 @@ public class DatabaseHelper {
             pstmt.setString(4, resident.getBirthDate());
             pstmt.setString(5, resident.getGender());
             pstmt.setString(6, resident.getAddress());
+            pstmt.setString(7, resident.getImagePath());
+            pstmt.setString(8, resident.getRole());
             pstmt.executeUpdate();
         } catch (SQLException e) {
             e.printStackTrace();
@@ -241,7 +316,7 @@ public class DatabaseHelper {
     }
 
     public static void updateResident(Resident resident) {
-        String sql = "UPDATE residents SET first_name = ?, middle_name = ?, last_name = ?, birth_date = ?, gender = ?, address = ? WHERE id = ?";
+        String sql = "UPDATE residents SET first_name = ?, middle_name = ?, last_name = ?, birth_date = ?, gender = ?, address = ?, image_path = ?, role = ? WHERE id = ?";
         try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, resident.getFirstName());
@@ -250,7 +325,9 @@ public class DatabaseHelper {
             pstmt.setString(4, resident.getBirthDate());
             pstmt.setString(5, resident.getGender());
             pstmt.setString(6, resident.getAddress());
-            pstmt.setInt(7, resident.getId());
+            pstmt.setString(7, resident.getImagePath());
+            pstmt.setString(8, resident.getRole());
+            pstmt.setInt(9, resident.getId());
             pstmt.executeUpdate();
         } catch (SQLException e) {
             e.printStackTrace();
@@ -275,14 +352,17 @@ public class DatabaseHelper {
             pstmt.setInt(1, id);
             ResultSet rs = pstmt.executeQuery();
             if (rs.next()) {
-                return Optional.of(new Resident(
+                Resident resident = new Resident(
                         rs.getInt("id"),
                         rs.getString("first_name"),
                         rs.getString("middle_name"),
                         rs.getString("last_name"),
                         rs.getString("birth_date"),
                         rs.getString("gender"),
-                        rs.getString("address")));
+                        rs.getString("address"));
+                resident.setImagePath(rs.getString("image_path"));
+                resident.setRole(rs.getString("role"));
+                return Optional.of(resident);
             }
         } catch (SQLException e) {
             e.printStackTrace();
@@ -307,5 +387,121 @@ public class DatabaseHelper {
             e.printStackTrace();
         }
         return distribution;
+    }
+
+    public static Map<String, Integer> getAgeDistribution() {
+        Map<String, Integer> distribution = new java.util.LinkedHashMap<>();
+        // Initialize age groups
+        distribution.put("0-10", 0);
+        distribution.put("11-20", 0);
+        distribution.put("21-30", 0);
+        distribution.put("31-40", 0);
+        distribution.put("41-50", 0);
+        distribution.put("51-60", 0);
+        distribution.put("61+", 0);
+
+        String sql = "SELECT birth_date FROM residents WHERE birth_date IS NOT NULL";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            java.time.LocalDate today = java.time.LocalDate.now();
+            while (rs.next()) {
+                try {
+                    String birthDateStr = rs.getString("birth_date");
+                    java.time.LocalDate birthDate = java.time.LocalDate.parse(birthDateStr);
+                    int age = today.getYear() - birthDate.getYear();
+                    if (today.getMonthValue() < birthDate.getMonthValue() ||
+                        (today.getMonthValue() == birthDate.getMonthValue() && today.getDayOfMonth() < birthDate.getDayOfMonth())) {
+                        age--;
+                    }
+
+                    String ageGroup;
+                    if (age <= 10) ageGroup = "0-10";
+                    else if (age <= 20) ageGroup = "11-20";
+                    else if (age <= 30) ageGroup = "21-30";
+                    else if (age <= 40) ageGroup = "31-40";
+                    else if (age <= 50) ageGroup = "41-50";
+                    else if (age <= 60) ageGroup = "51-60";
+                    else ageGroup = "61+";
+
+                    distribution.put(ageGroup, distribution.get(ageGroup) + 1);
+                } catch (Exception e) {
+                    // Skip invalid dates
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return distribution;
+    }
+
+    // ==================== ROLE CRUD OPERATIONS ====================
+
+    public static void addRole(Role role) {
+        String sql = "INSERT INTO roles(name, description) VALUES(?, ?)";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, role.getName());
+            pstmt.setString(2, role.getDescription());
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void updateRole(Role role) {
+        String sql = "UPDATE roles SET name = ?, description = ? WHERE id = ?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, role.getName());
+            pstmt.setString(2, role.getDescription());
+            pstmt.setInt(3, role.getId());
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void deleteRole(int id) {
+        String sql = "DELETE FROM roles WHERE id = ?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, id);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static Optional<Role> getRoleById(int id) {
+        String sql = "SELECT * FROM roles WHERE id = ?";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, id);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                Role role = new Role(rs.getInt("id"), rs.getString("name"), rs.getString("description"));
+                return Optional.of(role);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return Optional.empty();
+    }
+
+    public static ObservableList<Role> getAllRoles() {
+        ObservableList<Role> roles = FXCollections.observableArrayList();
+        String sql = "SELECT * FROM roles ORDER BY name ASC";
+        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                Role role = new Role(rs.getInt("id"), rs.getString("name"), rs.getString("description"));
+                roles.add(role);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return roles;
     }
 }
