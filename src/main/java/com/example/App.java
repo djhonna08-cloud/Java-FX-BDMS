@@ -43,7 +43,6 @@ import javafx.embed.swing.SwingFXUtils;
 import com.lowagie.text.Document;
 import com.lowagie.text.DocumentException;
 import com.lowagie.text.Paragraph;
-import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
 
 import java.io.IOException;
@@ -106,7 +105,7 @@ public class App extends Application {
         userSubmenuOpen = loadSubmenuStateFromDisk();
         loginScene = createLoginScene();
         stage.setScene(loginScene);
-        stage.setTitle("Baranggay ");
+        stage.setTitle("Baranggay San Marino Information Management System");
         stage.setMinWidth(1000);
         stage.setMinHeight(700);
         stage.show();
@@ -1034,7 +1033,7 @@ public class App extends Application {
         System.out.println("Initializing resident table...");
         updatePagination();
         // Set page factory after updating pagination to trigger initial load
-        pagination.setPageFactory(this::createPage);
+        pagination.setPageFactory(pageIndex -> createPage(pageIndex));
         System.out.println("Resident table initialized, page factory set");
     }
 
@@ -1046,7 +1045,7 @@ public class App extends Application {
             int currentPage = pagination.getCurrentPageIndex();
             if (currentPage >= 0) {
                 pagination.setPageFactory(null);
-                pagination.setPageFactory(this::createPage);
+                pagination.setPageFactory(pageIndex -> createPage(pageIndex));
             }
         }
     }
