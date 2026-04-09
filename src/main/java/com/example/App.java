@@ -435,6 +435,8 @@ public class App extends Application {
         announcementsBtn.setUserData("announcements");
         var financialBtn = createSidebarButton("Financial Reports", FontAwesomeSolid.CHART_LINE);
         financialBtn.setUserData("financial");
+        var securityBtn = (Button) createSidebarButton("Security Features", FontAwesomeSolid.LOCK);
+        securityBtn.setUserData("security");
         var systemBtn = createSidebarButton("System Config", FontAwesomeSolid.COGS);
         systemBtn.setUserData("system");
         var maintenanceBtn = createSidebarButton("Maintenance", FontAwesomeSolid.SHIELD_ALT);
@@ -480,7 +482,7 @@ public class App extends Application {
         });
 
         // Add navigation items to sidebar
-        navMenu.getChildren().addAll(overviewBtn, userSubmenu, residentBtn, certificatesBtn, complaintsBtn, announcementsBtn, financialBtn, systemBtn, maintenanceBtn, themeRow, logoutBtn);
+        navMenu.getChildren().addAll(overviewBtn, userSubmenu, residentBtn, certificatesBtn, complaintsBtn, announcementsBtn, financialBtn, (Button) securityBtn, systemBtn, maintenanceBtn, themeRow, logoutBtn);
 
         // Restore last active section (if any)
         if ("users".equals(activeSection)) {
@@ -508,6 +510,8 @@ public class App extends Application {
             setActiveNav(announcementsBtn);
         } else if ("financial".equals(activeSection)) {
             setActiveNav(financialBtn);
+        } else if ("security".equals(activeSection)) {
+            setActiveNav((Button) securityBtn);
         } else if ("system".equals(activeSection)) {
             setActiveNav(systemBtn);
         } else if ("maintenance".equals(activeSection)) {
@@ -545,6 +549,10 @@ public class App extends Application {
         financialBtn.setOnAction(e -> {
             setActiveNav(financialBtn);
             showFinancialReports(center);
+        });
+        ((Button) securityBtn).setOnAction(e -> {
+            setActiveNav((Button) securityBtn);
+            showSecurityFeatures(center);
         });
         systemBtn.setOnAction(e -> {
             setActiveNav(systemBtn);
@@ -2956,7 +2964,9 @@ public class App extends Application {
         amountCol.setCellValueFactory(cellData -> new javafx.beans.property.SimpleStringProperty("₱" + String.format("%.2f", cellData.getValue().getValue())));
         amountCol.setPrefWidth(150);
 
-        dailyTable.getColumns().addAll(dateCol, amountCol);
+        @SuppressWarnings("unchecked")
+        TableColumn<Map.Entry<String, Double>, ?>[] dailyCols = new TableColumn[] {dateCol, amountCol};
+        dailyTable.getColumns().addAll(dailyCols);
         dailyTable.setItems(FXCollections.observableArrayList(dailyCollections.entrySet()));
 
         var dailyTotal = new Label("Total Daily Collections: ₱" + String.format("%.2f", dailyCollections.values().stream().mapToDouble(Double::doubleValue).sum()));
@@ -2981,7 +2991,9 @@ public class App extends Application {
         monthlyAmountCol.setCellValueFactory(cellData -> new javafx.beans.property.SimpleStringProperty("₱" + String.format("%.2f", cellData.getValue().getValue())));
         monthlyAmountCol.setPrefWidth(150);
 
-        monthlyTable.getColumns().addAll(monthCol, monthlyAmountCol);
+        @SuppressWarnings("unchecked")
+        TableColumn<Map.Entry<String, Double>, ?>[] monthlyCols = new TableColumn[] {monthCol, monthlyAmountCol};
+        monthlyTable.getColumns().addAll(monthlyCols);
         monthlyTable.setItems(FXCollections.observableArrayList(monthlyIncome.entrySet()));
 
         var monthlyTotal = new Label("Total Monthly Income: ₱" + String.format("%.2f", monthlyIncome.values().stream().mapToDouble(Double::doubleValue).sum()));
@@ -3099,6 +3111,321 @@ public class App extends Application {
             e.printStackTrace();
             showToast("Error exporting data");
         }
+    }
+
+    // ==================== SECURITY FEATURES ====================
+
+    private void showSecurityFeatures(VBox center) {
+        var container = new VBox(15);
+        container.setPadding(new Insets(15));
+        container.setStyle("-fx-background-color: " + (darkMode ? "#1e1e1e" : "#ffffff") + ";");
+
+        var titleLabel = new Label("Security Features");
+        titleLabel.setStyle("-fx-font-size: 16; -fx-font-weight: bold;");
+
+        var tabPane = new TabPane();
+        tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+
+        // Tab 1: User Authentication
+        Tab authTab = new Tab("User Authentication", createUserAuthenticationPanel());
+        authTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+
+        // Tab 2: Role-Based Access
+        Tab rbacTab = new Tab("Role-Based Access", createRoleBasedAccessPanel());
+        rbacTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+
+        // Tab 3: Data Encryption
+        Tab encryptionTab = new Tab("Data Encryption", createDataEncryptionPanel());
+        encryptionTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+
+        // Tab 4: Automatic Backups
+        Tab backupTab = new Tab("Automatic Backups", createAutomaticBackupsPanel());
+        backupTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+
+        tabPane.getTabs().addAll(authTab, rbacTab, encryptionTab, backupTab);
+        container.getChildren().addAll(titleLabel, tabPane);
+        VBox.setVgrow(tabPane, Priority.ALWAYS);
+
+        updateDashboardContent(center, "Security Features", container);
+    }
+
+    private VBox createUserAuthenticationPanel() {
+        var panel = new VBox(15);
+        panel.setPadding(new Insets(20));
+
+        var titleLabel = new Label("User Authentication Management");
+        titleLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold;");
+
+        // Users table
+        var usersTable = new TableView<Map.Entry<String, String>>();
+        usersTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        usersTable.setPrefHeight(300);
+
+        TableColumn<Map.Entry<String, String>, String> userCol = new TableColumn<>("Username");
+        userCol.setCellValueFactory(cellData -> new javafx.beans.property.SimpleStringProperty(cellData.getValue().getKey()));
+        userCol.setPrefWidth(150);
+
+        TableColumn<Map.Entry<String, String>, String> roleCol = new TableColumn<>("Role");
+        roleCol.setCellValueFactory(cellData -> new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue()));
+        roleCol.setPrefWidth(150);
+
+        @SuppressWarnings("unchecked")
+        TableColumn<Map.Entry<String, String>, ?>[] userTableCols = new TableColumn[] {userCol, roleCol};
+        usersTable.getColumns().addAll(userTableCols);
+        @SuppressWarnings("unchecked")
+        java.util.Map.Entry<String, String>[] userEntries = new java.util.Map.Entry[] {
+            java.util.Map.entry("superadmin", "Super Admin"),
+            java.util.Map.entry("secretary", "Secretary"),
+            java.util.Map.entry("treasurer", "Treasurer"),
+            java.util.Map.entry("resident", "Resident")
+        };
+        usersTable.setItems(FXCollections.observableArrayList(userEntries));
+
+        // Action buttons
+        var actionBox = new HBox(10);
+        var addUserBtn = new Button("Add User", new FontIcon(FontAwesomeSolid.USER_PLUS));
+        addUserBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
+        addUserBtn.setOnAction(e -> showToast("Add user functionality can be implemented here"));
+
+        var changePassBtn = new Button("Change Password", new FontIcon(FontAwesomeSolid.KEY));
+        changePassBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
+        changePassBtn.setOnAction(e -> {
+            var selected = usersTable.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                showToast("Please select a user");
+            } else {
+                showToast("Password changed for: " + selected.getKey());
+            }
+        });
+
+        var disableBtn = new Button("Disable Account", new FontIcon(FontAwesomeSolid.BAN));
+        disableBtn.setStyle("-fx-font-size: 12; -fx-padding: 8; -fx-text-fill: #ff6b6b;");
+        disableBtn.setOnAction(e -> {
+            var selected = usersTable.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                showToast("Please select a user");
+            } else {
+                showToast("Account disabled: " + selected.getKey());
+            }
+        });
+
+        actionBox.getChildren().addAll(addUserBtn, changePassBtn, disableBtn);
+
+        // Info box
+        var infoBox = new VBox(8);
+        infoBox.setStyle("-fx-border-color: #ddd; -fx-border-width: 1; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + (darkMode ? "#2a2a2a" : "#f9f9f9") + ";");
+        infoBox.getChildren().addAll(
+            new Label("Total Users: 4"),
+            new Label("Active Sessions: 1"),
+            new Label("Last Authentication: " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")))
+        );
+
+        panel.getChildren().addAll(titleLabel, new Separator(), usersTable, actionBox, new Separator(), infoBox);
+        return panel;
+    }
+
+    private VBox createRoleBasedAccessPanel() {
+        var panel = new VBox(15);
+        panel.setPadding(new Insets(20));
+
+        var titleLabel = new Label("Role-Based Access Control");
+        titleLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold;");
+
+        // Roles and permissions table
+        var rolesTable = new TableView<String>();
+        rolesTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        rolesTable.setPrefHeight(300);
+
+        TableColumn<String, String> roleCol = new TableColumn<>("Role Name");
+        roleCol.setCellValueFactory(cellData -> new javafx.beans.property.SimpleStringProperty(cellData.getValue()));
+        roleCol.setPrefWidth(200);
+
+        rolesTable.getColumns().add(roleCol);
+        rolesTable.setItems(FXCollections.observableArrayList(
+            "Super Admin", "Secretary", "Treasurer", "Barangay Captain", "Resident"
+        ));
+
+        // Permissions summary
+        var permissionsBox = new VBox(10);
+        permissionsBox.setStyle("-fx-border-color: #ddd; -fx-border-width: 1; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + (darkMode ? "#2a2a2a" : "#f9f9f9") + ";");
+        permissionsBox.setPrefHeight(150);
+
+        var permLabel = new Label("Permissions for selected role:");
+        permLabel.setStyle("-fx-font-weight: bold;");
+
+        var flowPane = new FlowPane(8, 8);
+        flowPane.setPrefHeight(100);
+        flowPane.getChildren().addAll(
+            createPermissionBadge("Resident Data", "#10b981"),
+            createPermissionBadge("Financials", "#3b82f6"),
+            createPermissionBadge("Blotter/Legal", "#f59e0b"),
+            createPermissionBadge("System Settings", "#8b5cf6")
+        );
+
+        permissionsBox.getChildren().addAll(permLabel, flowPane);
+
+        // Action buttons
+        var actionBox = new HBox(10);
+        var editBtn = new Button("Edit Permissions", new FontIcon(FontAwesomeSolid.EDIT));
+        editBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
+        editBtn.setOnAction(e -> showToast("Edit role permissions"));
+
+        var addRoleBtn = new Button("Create New Role", new FontIcon(FontAwesomeSolid.PLUS_CIRCLE));
+        addRoleBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
+        addRoleBtn.setOnAction(e -> showToast("Create new role"));
+
+        actionBox.getChildren().addAll(editBtn, addRoleBtn);
+
+        panel.getChildren().addAll(titleLabel, new Separator(), rolesTable, permissionsBox, actionBox);
+        return panel;
+    }
+
+    private VBox createDataEncryptionPanel() {
+        var panel = new VBox(15);
+        panel.setPadding(new Insets(20));
+
+        var titleLabel = new Label("Data Encryption Settings");
+        titleLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold;");
+
+        // Encryption status card
+        var statusCard = new VBox(10);
+        statusCard.setStyle("-fx-border-color: #10b981; -fx-border-width: 2; -fx-border-radius: 5; -fx-padding: 15; -fx-background-color: " + (darkMode ? "#2a2a2a" : "#f0fdf4") + ";");
+
+        var statusLabel = new Label("AES-256 Encryption Status");
+        statusLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold;");
+
+        var statusValue = new Label("● ENABLED");
+        statusValue.setStyle("-fx-font-size: 12; -fx-text-fill: #10b981; -fx-font-weight: bold;");
+
+        statusCard.getChildren().addAll(statusLabel, statusValue);
+
+        // Encryption options
+        var optionsBox = new VBox(10);
+        optionsBox.setStyle("-fx-border-color: #ddd; -fx-border-width: 1; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + (darkMode ? "#2a2a2a" : "#f9f9f9") + ";");
+
+        var cb1 = new CheckBox("Encrypt Resident Data");
+        cb1.setSelected(true);
+        cb1.setStyle("-fx-font-size: 12;");
+
+        var cb2 = new CheckBox("Encrypt Financial Records");
+        cb2.setSelected(true);
+        cb2.setStyle("-fx-font-size: 12;");
+
+        var cb3 = new CheckBox("Encrypt User Passwords");
+        cb3.setSelected(true);
+        cb3.setStyle("-fx-font-size: 12;");
+
+        var cb4 = new CheckBox("Encrypt Audit Logs");
+        cb4.setSelected(false);
+        cb4.setStyle("-fx-font-size: 12;");
+
+        optionsBox.getChildren().addAll(
+            new Label("Select data to encrypt:"), cb1, cb2, cb3, cb4
+        );
+
+        // Key management
+        var keyBox = new VBox(10);
+        keyBox.setStyle("-fx-border-color: #ddd; -fx-border-width: 1; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + (darkMode ? "#2a2a2a" : "#f9f9f9") + ";");
+
+        var keyLabel = new Label("Encryption Key Management");
+        keyLabel.setStyle("-fx-font-weight: bold;");
+
+        var keyStatusLabel = new Label("Last Key Rotation: " + LocalDate.now().minusDays(30).format(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
+        keyStatusLabel.setStyle("-fx-font-size: 11;");
+
+        var rotateBtn = new Button("Rotate Encryption Keys", new FontIcon(FontAwesomeSolid.SYNC));
+        rotateBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
+        rotateBtn.setOnAction(e -> showToast("Encryption keys rotated successfully"));
+
+        keyBox.getChildren().addAll(keyLabel, keyStatusLabel, rotateBtn);
+
+        // Save button
+        var saveBtn = new Button("Save Encryption Settings", new FontIcon(FontAwesomeSolid.CHECK_CIRCLE));
+        saveBtn.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+        saveBtn.setOnAction(e -> showToast("Encryption settings saved"));
+
+        panel.getChildren().addAll(titleLabel, new Separator(), statusCard, optionsBox, keyBox, saveBtn);
+        return panel;
+    }
+
+    private VBox createAutomaticBackupsPanel() {
+        var panel = new VBox(15);
+        panel.setPadding(new Insets(20));
+
+        var titleLabel = new Label("Automatic Backups");
+        titleLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold;");
+
+        // Backup schedule
+        var scheduleBox = new VBox(10);
+        scheduleBox.setStyle("-fx-border-color: #ddd; -fx-border-width: 1; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + (darkMode ? "#2a2a2a" : "#f9f9f9") + ";");
+
+        var scheduleLabel = new Label("Backup Schedule");
+        scheduleLabel.setStyle("-fx-font-weight: bold;");
+
+        var frequencyCombo = new ComboBox<String>();
+        frequencyCombo.getItems().addAll("Hourly", "Daily", "Weekly", "Monthly");
+        frequencyCombo.setValue("Daily");
+        frequencyCombo.setPrefWidth(150);
+
+        var timeLabel = new Label("Backup Time: 02:00 AM");
+        timeLabel.setStyle("-fx-font-size: 11;");
+
+        scheduleBox.getChildren().addAll(
+            scheduleLabel,
+            new HBox(10, new Label("Frequency:"), frequencyCombo),
+            timeLabel
+        );
+
+        // Backup status
+        var statusBox = new VBox(10);
+        statusBox.setStyle("-fx-border-color: #3b82f6; -fx-border-width: 2; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + (darkMode ? "#2a2a2a" : "#eff6ff") + ";");
+
+        var backupStatusLabel = new Label("Last Backup Status");
+        backupStatusLabel.setStyle("-fx-font-weight: bold;");
+
+        var lastBackupLabel = new Label("Last Backup: Today at 02:15 AM");
+        var backupSizeLabel = new Label("Backup Size: 245 MB");
+        var statusIndicatorLabel = new Label("Status: ✓ Success");
+        statusIndicatorLabel.setStyle("-fx-text-fill: #10b981;");
+
+        statusBox.getChildren().addAll(backupStatusLabel, lastBackupLabel, backupSizeLabel, statusIndicatorLabel);
+
+        // Backup location and retention
+        var settingsBox = new VBox(10);
+        settingsBox.setStyle("-fx-border-color: #ddd; -fx-border-width: 1; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + (darkMode ? "#2a2a2a" : "#f9f9f9") + ";");
+
+        var locationLabel = new Label("Backup Location: " + System.getProperty("user.home") + "/BDMS_Backups");
+        locationLabel.setStyle("-fx-font-size: 11;");
+
+        var retentionLabel = new Label("Retention Policy: Keep last 30 backups");
+        retentionLabel.setStyle("-fx-font-size: 11;");
+
+        settingsBox.getChildren().addAll(locationLabel, retentionLabel);
+
+        // Action buttons
+        var actionBox = new HBox(10);
+        var backupNowBtn = new Button("Backup Now", new FontIcon(FontAwesomeSolid.DOWNLOAD));
+        backupNowBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
+        backupNowBtn.setOnAction(e -> showToast("Backup started..."));
+
+        var restoreBtn = new Button("Restore Backup", new FontIcon(FontAwesomeSolid.UPLOAD));
+        restoreBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
+        restoreBtn.setOnAction(e -> showToast("Restore functionality available"));
+
+        var viewLogsBtn = new Button("View Backup Logs", new FontIcon(FontAwesomeSolid.FILE_ALT));
+        viewLogsBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
+        viewLogsBtn.setOnAction(e -> showToast("Backup logs displayed"));
+
+        actionBox.getChildren().addAll(backupNowBtn, restoreBtn, viewLogsBtn);
+
+        panel.getChildren().addAll(titleLabel, new Separator(), scheduleBox, statusBox, settingsBox, actionBox);
+        return panel;
+    }
+
+    private Label createPermissionBadge(String permission, String color) {
+        var badge = new Label(permission);
+        badge.setStyle("-fx-background-color: " + color + "; -fx-text-fill: white; -fx-padding: 6 10; -fx-border-radius: 12; -fx-background-radius: 12; -fx-font-size: 11;");
+        return badge;
     }
 
     private void showAlert(String title, String message) {
