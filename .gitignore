@@ -1,0 +1,16 @@
+# Maven build artifacts
+target/
+*.class
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated files
+generatedID/
+generated_ids/
