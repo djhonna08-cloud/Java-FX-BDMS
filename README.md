@@ -328,7 +328,110 @@ The application interface consists of:
 
 ---
 
-## 📊 Database Schema
+## � Database Management
+
+### H2 Web Console
+
+Access the H2 database directly through the web-based console for SQL queries, data viewing, and management.
+
+#### Starting H2 Web Console
+
+**On Windows (PowerShell):**
+```powershell
+cd C:\Users\Razza\OneDrive\Desktop\Java-FX-BDMS
+java -cp ".;target/classes;$env:USERPROFILE/.m2/repository/com/h2database/h2/2.1.214/h2-2.1.214.jar" org.h2.tools.Server -web -webPort 8082
+```
+
+**On Linux/macOS:**
+```bash
+cd ~/path/to/Java-FX-BDMS
+java -cp ".:target/classes:$HOME/.m2/repository/com/h2database/h2/2.1.214/h2-2.1.214.jar" org.h2.tools.Server -web -webPort 8082
+```
+
+#### H2 Console Connection Details
+
+Once the console is running, open your browser and navigate to:
+
+**🌐 URL:** http://localhost:8082
+
+**Database Connection Settings:**
+| Setting | Value |
+|---------|-------|
+| **Driver Class** | org.h2.Driver |
+| **JDBC URL** | `jdbc:h2:~/bdms_v2` |
+| **Username** | `sa` |
+| **Password** | (leave blank) |
+
+#### Using H2 Web Console
+
+1. Open browser to http://localhost:8082
+2. Select "Generic H2 (Embedded)" from driver dropdown (usually pre-selected)
+3. Enter JDBC URL: `jdbc:h2:~/bdms_v2`
+4. Username: `sa`
+5. Password: (leave empty)
+6. Click **Connect**
+7. Browse tables, run SQL queries, view/edit data directly
+
+#### Useful H2 Console Queries
+
+```sql
+-- View all users
+SELECT * FROM users;
+
+-- View all residents
+SELECT * FROM residents;
+
+-- View all complaints with status
+SELECT id, title, status, date_submitted FROM complaints;
+
+-- View audit trail (last 10 operations)
+SELECT * FROM audit_log ORDER BY id DESC LIMIT 10;
+
+-- Count records by table
+SELECT 'USERS' as table_name, COUNT(*) as record_count FROM users
+UNION ALL
+SELECT 'RESIDENTS', COUNT(*) FROM residents
+UNION ALL
+SELECT 'COMPLAINTS', COUNT(*) FROM complaints
+UNION ALL
+SELECT 'ANNOUNCEMENTS', COUNT(*) FROM announcements
+UNION ALL
+SELECT 'DOCUMENT_REQUESTS', COUNT(*) FROM document_requests;
+
+-- Export complaints as clean view
+SELECT c.id, r.first_name, r.last_name, c.title, c.status, c.date_submitted
+FROM complaints c
+JOIN residents r ON c.resident_id = r.id
+ORDER BY c.date_submitted DESC;
+```
+
+#### Database Backup & Export
+
+**Generate SQL Dump File:**
+```bash
+# Compile export utility
+javac ExportDatabase.java
+
+# Run export (creates bdms_dump.sql)
+java -cp ".;target/classes;$env:USERPROFILE/.m2/repository/com/h2database/h2/2.1.214/h2-2.1.214.jar" ExportDatabase
+```
+
+**Backup Database Files:**
+```bash
+# Linux/macOS
+cp -r ~/bdms_v2* ~/Backups/bdms_backup_$(date +%Y%m%d)
+
+# Windows PowerShell
+Copy-Item "$env:USERPROFILE/bdms_v2*" -Destination "$env:USERPROFILE/Backups/bdms_backup_$(Get-Date -Format yyyyMMdd)" -Recurse
+```
+
+#### Stopping H2 Console
+
+Press `Ctrl+C` in the terminal where H2 console is running.
+
+---
+
+## �📊 Database Schema
 
 The H2 database stores all application data in 7 core tables:
 
