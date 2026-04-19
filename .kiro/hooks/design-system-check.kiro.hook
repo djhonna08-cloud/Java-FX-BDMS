@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "Design System Compliance Check",
+  "description": "Reminds developers to verify design system compliance when CSS files are modified",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "*.css"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Review the CSS changes and ensure they comply with the San Marino BDMS Design System. Check: 1) Colors match the official palette (San Marino Blue #446CAC, Champagne Gold #FBC531, Cloud Dancer #F0EEE9), 2) Font sizes are readable (minimum 16px for body text), 3) Spacing follows the 4px/8px grid, 4) Border radius is consistent (8px for buttons/inputs, 12px for cards). Suggest any corrections needed."
+  }
+}

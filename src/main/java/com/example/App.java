@@ -21,6 +21,8 @@ import javafx.scene.shape.Circle;
 import javafx.scene.shape.Rectangle;
 import javafx.stage.Stage;
 import javafx.stage.FileChooser;
+import javafx.stage.DirectoryChooser;
+import javafx.stage.Popup;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.util.Duration;
@@ -79,7 +81,6 @@ public class App extends Application {
     private Scene loginScene;
     private Stage primaryStage;
     private StackPane rootPane; // For toast notifications
-    private boolean darkMode = true;
 
     // Navigation state
     private Button selectedNavButton;
@@ -94,8 +95,8 @@ public class App extends Application {
     private VBox userSubmenuContainer;
 
     // Persisted settings
-    private final Path themeFile = Paths.get(System.getProperty("user.home"), ".bdms_theme");
     private final Path submenuStateFile = Paths.get(System.getProperty("user.home"), ".bdms_submenu_open");
+    private final Path rememberMeFile = Paths.get(System.getProperty("user.home"), ".bdms_remember_me");
 
     // Last selected view (used when rebuilding UI on theme toggle)
     private String activeSection = "overview";
@@ -110,28 +111,15 @@ public class App extends Application {
 
     @Override
     public void start(Stage stage) {
-        primaryStage = stage;
-        darkMode = loadThemeFromDisk();
-        userSubmenuOpen = loadSubmenuStateFromDisk();
+        this.primaryStage = stage;
+        stage.setTitle("Barangay San Marino BDMS");
+        stage.setResizable(false);
+        stage.setWidth(1280);
+        stage.setHeight(900);
+        
         loginScene = createLoginScene();
         stage.setScene(loginScene);
-        stage.setTitle("Baranggay San Marino Information Management System");
-        stage.setWidth(1024);
-        stage.setHeight(768);
-        stage.setResizable(false);
         stage.show();
-    }
-
-    private boolean loadSubmenuStateFromDisk() {
-        try {
-            if (Files.exists(submenuStateFile)) {
-                var value = Files.readString(submenuStateFile).trim();
-                return "open".equalsIgnoreCase(value);
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        return false;
     }
 
     private void saveSubmenuStateToDisk() {
@@ -142,25 +130,34 @@ public class App extends Application {
         }
     }
 
-    private boolean loadThemeFromDisk() {
+    private void saveRememberMe(String username) {
         try {
-            if (Files.exists(themeFile)) {
-                var value = Files.readString(themeFile).trim();
-                return "light".equalsIgnoreCase(value) ? false : true;
+            Files.writeString(rememberMeFile, username, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private String loadRememberMe() {
+        try {
+            if (Files.exists(rememberMeFile)) {
+                return Files.readString(rememberMeFile).trim();
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
-        return true;
+        return "";
     }
 
-    private void saveThemeToDisk() {
+    private void clearRememberMe() {
         try {
-            Files.writeString(themeFile, darkMode ? "dark" : "light", StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            Files.deleteIfExists(rememberMeFile);
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
+
+
 
     private Scene createLoginScene() {
         // Load and display logo from assets
@@ -170,7 +167,7 @@ public class App extends Application {
             if (resourceStream != null) {
                 var logoImage = new Image(resourceStream);
                 logoView.setImage(logoImage);
-                logoView.setFitWidth(220);
+                logoView.setFitWidth(280);
                 logoView.setPreserveRatio(true);
                 System.out.println("✓ Logo loaded from resources");
             } else {
@@ -180,7 +177,7 @@ public class App extends Application {
                 if (logoFile.exists()) {
                     var logoImage = new Image(logoFile.toURI().toString());
                     logoView.setImage(logoImage);
-                    logoView.setFitWidth(220);
+                    logoView.setFitWidth(280);
                     logoView.setPreserveRatio(true);
                     System.out.println("✓ Logo loaded from file path");
                 }
@@ -195,7 +192,6 @@ public class App extends Application {
 
         var subtitle = new Label("Welcome back!");
         subtitle.getStyleClass().add("login-subtitle");
-        subtitle.setStyle("-fx-text-fill: " + (darkMode ? "#ffffff" : "#1a1a1a") + ";");
 
         var usernameField = new TextField();
         usernameField.setPromptText("E.g. info@example.com");
@@ -208,8 +204,20 @@ public class App extends Application {
         var loginButton = new Button("Login");
         loginButton.getStyleClass().add("button-primary");
         loginButton.setMaxWidth(Double.MAX_VALUE);
+        
+        var rememberCheckBox = new CheckBox("Remember me for 30 days");
+        rememberCheckBox.getStyleClass().add("check-box");
+        
+        // Load saved username if remember me was checked
+        String savedUsername = loadRememberMe();
+        if (!savedUsername.isEmpty()) {
+            usernameField.setText(savedUsername);
+            rememberCheckBox.setSelected(true);
+            passwordField.requestFocus(); // Focus on password field
+        }
 
-        loginButton.setOnAction(e -> {
+        // Login action handler
+        Runnable performLogin = () -> {
             String username = usernameField.getText().trim();
             String password = passwordField.getText();
             if (username.isEmpty() || password.isEmpty()) {
@@ -223,21 +231,30 @@ public class App extends Application {
             }
             String role = DatabaseHelper.authenticate(username, password);
             if (role != null) {
+                // Handle remember me
+                if (rememberCheckBox.isSelected()) {
+                    saveRememberMe(username);
+                } else {
+                    clearRememberMe();
+                }
+                
                 Map<String, String> permissions = DatabaseHelper.getPermissions(role);
                 primaryStage.setScene(createDashboardScene(username, role, permissions));
                 primaryStage.centerOnScreen();
             } else {
                 showToast("Invalid username or password.");
             }
-        });
+        };
+
+        loginButton.setOnAction(e -> performLogin.run());
+        
+        // Enable Enter key to login from both fields
+        usernameField.setOnAction(e -> performLogin.run());
+        passwordField.setOnAction(e -> performLogin.run());
 
         var forgotLink = new Hyperlink("Forgot your password?");
         forgotLink.getStyleClass().add("hyperlink");
         forgotLink.setOnAction(e -> showAlert("Forgot Password", "Please contact support to reset your password."));
-
-
-        var rememberCheckBox = new CheckBox("Remember me for 30 days");
-        rememberCheckBox.getStyleClass().add("check-box");
 
         var formVBox = new VBox(12, subtitle, usernameField, passwordField, loginButton, forgotLink, rememberCheckBox);
         formVBox.setAlignment(Pos.CENTER);
@@ -255,8 +272,8 @@ public class App extends Application {
             if (resourceStream != null) {
                 var bgImage = new Image(resourceStream);
                 backgroundView.setImage(bgImage);
-                backgroundView.setFitWidth(1024);
-                backgroundView.setFitHeight(768);
+                backgroundView.setFitWidth(1280);
+                backgroundView.setFitHeight(900);
                 backgroundView.setPreserveRatio(false);
                 backgroundView.setOpacity(1);
                 System.out.println("✓ Background loaded from resources");
@@ -266,8 +283,8 @@ public class App extends Application {
                 if (bgFile.exists()) {
                     var bgImage = new Image(bgFile.toURI().toString());
                     backgroundView.setImage(bgImage);
-                    backgroundView.setFitWidth(1024);
-                    backgroundView.setFitHeight(768);
+                    backgroundView.setFitWidth(1280);
+                    backgroundView.setFitHeight(900);
                     backgroundView.setPreserveRatio(false);
                     backgroundView.setOpacity(1);
                     System.out.println("✓ Background loaded from file path");
@@ -290,8 +307,8 @@ public class App extends Application {
         this.rootPane = root; // For toast notifications
 
         // Start with a desktop-friendly size, content remains centered
-        var scene = new Scene(root, 1024, 768);
-        scene.getStylesheets().add(getClass().getResource(darkMode ? "dark-theme.css" : "light-theme.css").toExternalForm());
+        var scene = new Scene(root, 1280, 900);
+        scene.getStylesheets().add(getClass().getResource("light-theme.css").toExternalForm());
         return scene;
     }
 
@@ -353,23 +370,34 @@ public class App extends Application {
         scanButton.setOnAction(e -> startCameraScan());
 
         var notificationIcon = new FontIcon(FontAwesomeSolid.BELL);
-        var notificationDot = new Circle(4, Color.web("#f43f5e"));
+        notificationDot = new Circle(4, Color.web("#f43f5e"));
         StackPane.setAlignment(notificationDot, Pos.TOP_RIGHT);
         notificationDot.setTranslateX(-2);
         notificationDot.setTranslateY(2);
+        notificationDot.setVisible(false); // Hidden - showing activity instead of notifications
 
         var notificationButton = new StackPane(notificationIcon, notificationDot);
         notificationButton.setPadding(new Insets(8));
         notificationButton.getStyleClass().add("notification-button");
-        notificationButton.setOnMouseClicked(e -> showAlert("Notifications", "- New clearance request from Maria Clara.\n- Blotter case #2023-005 requires attention."));
+        notificationButton.setOnMouseClicked(e -> {
+            if (notificationPopup == null) {
+                createNotificationDropdown(notificationButton);
+            }
+            if (notificationPopup.isShowing()) {
+                notificationPopup.hide();
+            } else {
+                // Position popup below the notification button
+                var bounds = notificationButton.localToScreen(notificationButton.getBoundsInLocal());
+                notificationPopup.show(notificationButton, bounds.getMinX() - 300, bounds.getMaxY() + 5);
+                refreshNotificationDropdown();
+            }
+        });
 
         var userLabel = new Label(username);
         userLabel.getStyleClass().add("user-profile-name");
-        userLabel.setStyle("-fx-text-fill: " + (darkMode ? "#f0f0f0" : "#1a1a1a") + ";");
 
         var roleLabel = new Label(role);
         roleLabel.getStyleClass().add("user-profile-role");
-        roleLabel.setStyle("-fx-text-fill: " + (darkMode ? "#b0b0b0" : "#666") + ";");
 
         var userProfile = new VBox(-2, userLabel, roleLabel);
         userProfile.setAlignment(Pos.CENTER_RIGHT);
@@ -388,25 +416,25 @@ public class App extends Application {
             if (resourceStream != null) {
                 var logoImage = new Image(resourceStream);
                 dashboardLogoView.setImage(logoImage);
-                dashboardLogoView.setFitWidth(120);
+                dashboardLogoView.setFitWidth(180);
                 dashboardLogoView.setPreserveRatio(true);
             } else {
                 File logoFile = new File("src/assets/logo.png");
                 if (logoFile.exists()) {
                     var logoImage = new Image(logoFile.toURI().toString());
                     dashboardLogoView.setImage(logoImage);
-                    dashboardLogoView.setFitWidth(120);
+                    dashboardLogoView.setFitWidth(180);
                     dashboardLogoView.setPreserveRatio(true);
                 }
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
-        var topBrand = new HBox(8, dashboardLogoView);
-        topBrand.setAlignment(Pos.CENTER_LEFT);
-        topBrand.setPadding(new Insets(20, 0, 20, 20));
+        var topBrand = new HBox(dashboardLogoView);
+        topBrand.setAlignment(Pos.CENTER);
+        topBrand.setPadding(new Insets(24, 0, 24, 0));
 
-        navMenu = new VBox(8);
+        navMenu = new VBox(4);
         navMenu.getStyleClass().add("sidebar-menu");
 
         // Selection underline that slides beneath the active nav item
@@ -443,36 +471,9 @@ public class App extends Application {
         maintenanceBtn.setUserData("maintenance");
 
 
-        // Collapsible submenu for User & Access Management
-        var userSubmenu = createCollapsibleSubmenu("User & Access", java.util.List.of(
-            "Manage Roles", "Permissions", "Audit Log"), item -> {
-                setActiveNav(usersBtn);
-                if ("Audit Log".equals(item)) {
-                    showAuditLog(center);
-                } else if ("Manage Roles".equals(item)) {
-                    showManageRoles(center);
-                } else if ("Permissions".equals(item)) {
-                    showPermissions(center);
-                } else {
-                    updateDashboardContent(center, "User & Access Management", "Selected: " + item);
-                }
-            });
 
-        // Theme switch control (animated)
-        var themeLabel = new Label(darkMode ? "Dark Mode" : "Light Mode");
-        themeLabel.setStyle("-fx-text-fill: " + (darkMode ? "#b0b0b0" : "#666") + ";");
 
-        var themeSwitch = createThemeSwitch(() -> {
-            // Hot-swap CSS without recreating the scene to preserve state
-            Scene scene = primaryStage.getScene();
-            scene.getStylesheets().clear();
-            scene.getStylesheets().add(getClass().getResource(darkMode ? "dark-theme.css" : "light-theme.css").toExternalForm());
-            themeLabel.setText(darkMode ? "Dark Mode" : "Light Mode");
-        });
-        
-        var themeRow = new HBox(10, themeSwitch, themeLabel);
-        themeRow.setAlignment(Pos.CENTER_LEFT);
-        themeRow.setPadding(new Insets(8, 0, 0, 0));
+
 
         var logoutBtn = createSidebarButton("Logout", FontAwesomeSolid.SIGN_OUT_ALT);
         logoutBtn.setOnAction(e -> {
@@ -480,26 +481,17 @@ public class App extends Application {
             primaryStage.setScene(createLoginScene());
             primaryStage.centerOnScreen();
         });
+        
+        // Add spacer before logout to separate it from other menu items
+        Region spacer = new Region();
+        VBox.setVgrow(spacer, Priority.ALWAYS);
 
         // Add navigation items to sidebar
-        navMenu.getChildren().addAll(overviewBtn, userSubmenu, residentBtn, certificatesBtn, complaintsBtn, announcementsBtn, financialBtn, (Button) securityBtn, systemBtn, maintenanceBtn, themeRow, logoutBtn);
+        navMenu.getChildren().addAll(overviewBtn, usersBtn, residentBtn, certificatesBtn, complaintsBtn, announcementsBtn, financialBtn, (Button) securityBtn, systemBtn, maintenanceBtn, spacer, logoutBtn);
 
         // Restore last active section (if any)
         if ("users".equals(activeSection)) {
             setActiveNav(usersBtn);
-            if (userSubmenuOpen) {
-                animateSubmenuHeight(userSubmenuContainer, true);
-            }
-            if (activeSubmenuItem != null) {
-                // Attempt to restore previously selected submenu item
-                for (var node : userSubmenuContainer.getChildren()) {
-                    if (node instanceof Button btn && activeSubmenuItem.equals(btn.getUserData())) {
-                        setActiveSubmenuItem(btn);
-                        Platform.runLater(() -> moveSubmenuIndicator(btn));
-                        break;
-                    }
-                }
-            }
         } else if ("resident".equals(activeSection)) {
             setActiveNav(residentBtn);
         } else if ("certificates".equals(activeSection)) {
@@ -527,8 +519,7 @@ public class App extends Application {
         });
         usersBtn.setOnAction(e -> {
             setActiveNav(usersBtn);
-            var content = createContentBox("User & Access Management", "Select an option from the submenu to manage roles, permissions, or view audit logs.");
-            updateDashboardContent(center, "User & Access Management", content);
+            showUserAndAccess(center);
         });
         residentBtn.setOnAction(e -> {
             setActiveNav(residentBtn);
@@ -556,20 +547,29 @@ public class App extends Application {
         });
         systemBtn.setOnAction(e -> {
             setActiveNav(systemBtn);
-            updateDashboardContent(center, "System Configuration", "Branding, document templates, and fee settings.");
+            showSystemConfiguration(center);
         });
         maintenanceBtn.setOnAction(e -> {
             setActiveNav(maintenanceBtn);
-            updateDashboardContent(center, "Maintenance & Security", "Database backup, notifications, and announcement blast.");
+            showMaintenance(center);
         });
 
         // Move the brand header inside the menu so it aligns with nav items
         navMenu.getChildren().add(0, topBrand);
         topBrand.setPadding(new Insets(0, 0, 16, 0));
 
-        var sidebar = new VBox(menuStack);
+        // Make navigation menu scrollable to show all items including logout
+        var navScrollPane = new ScrollPane(menuStack);
+        navScrollPane.setStyle("-fx-background-color: transparent; -fx-background: transparent;");
+        navScrollPane.setFitToWidth(true);
+        navScrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        navScrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        VBox.setVgrow(navScrollPane, Priority.ALWAYS);
+
+        var sidebar = new VBox(navScrollPane);
         sidebar.getStyleClass().add("sidebar");
-        sidebar.setPrefWidth(260);
+        sidebar.setPrefWidth(300);
+        sidebar.setMinWidth(300);
 
         // Ensure the indicator is in the correct position after layout
         Platform.runLater(() -> {
@@ -578,11 +578,15 @@ public class App extends Application {
 
         root.setLeft(sidebar);
         
-        // Make center content scrollable and responsive
+        // Make center content scrollable and responsive with consistent padding
+        center.setPadding(new Insets(20));
+        center.setMaxWidth(Double.MAX_VALUE);
+        
         var scrollPane = new ScrollPane(center);
         scrollPane.getStyleClass().add("scroll-pane");
         scrollPane.setFitToWidth(true);
         scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
 
         var mainContent = new VBox(0, topBar, scrollPane);
         VBox.setVgrow(scrollPane, Priority.ALWAYS);
@@ -596,8 +600,8 @@ public class App extends Application {
             showOverview(center);
         }
 
-        var scene = new Scene(root, 1024, 768);
-        scene.getStylesheets().add(getClass().getResource(darkMode ? "dark-theme.css" : "light-theme.css").toExternalForm());
+        var scene = new Scene(root, 1280, 900);
+        scene.getStylesheets().add(getClass().getResource("light-theme.css").toExternalForm());
         return scene;
     }
 
@@ -659,37 +663,7 @@ public class App extends Application {
         new javafx.animation.ParallelTransition(translate, widthAnim).play();
     }
 
-    private StackPane createThemeSwitch(Runnable onToggle) {
-        var track = new Rectangle(44, 22);
-        track.setArcWidth(22);
-        track.setArcHeight(22);
-        track.getStyleClass().add("theme-switch-track");
 
-        var knob = new Circle(10);
-        knob.getStyleClass().add("theme-switch-knob");
-        knob.setTranslateX(darkMode ? 10 : -10);
-
-        var switchPane = new StackPane(track, knob);
-        switchPane.setPadding(new Insets(6));
-        switchPane.setOnMouseClicked(e -> {
-            darkMode = !darkMode;
-            animateToggle(knob);
-            saveThemeToDisk();
-            // The onToggle runnable is now responsible for updating the UI.
-            // No need to recreate the scene here.
-            if (onToggle != null) {
-                onToggle.run();
-            }
-        });
-
-        return switchPane;
-    }
-
-    private void animateToggle(Circle knob) {
-        var translate = new TranslateTransition(Duration.millis(180), knob);
-        translate.setToX(darkMode ? 10 : -10);
-        translate.play();
-    }
 
     private void updateDashboardContent(VBox center, String title, String body) {
         updateDashboardContent(center, title, createContentBox(title, body));
@@ -719,7 +693,8 @@ public class App extends Application {
         int totalPopulation = DatabaseHelper.getResidentCount(null);
         var populationCard = createStatCard("Total Population", String.format("%,d", totalPopulation), "#30c88e");
 
-        var revenueCard = createStatCard("Revenue", "₱0", "#eab308");
+        double totalRevenue = DatabaseHelper.getTotalRevenue();
+        var revenueCard = createStatCard("Revenue", String.format("₱%.2f", totalRevenue), "#eab308");
         var clearanceCard = createStatCard("Pending Clearances", "0", "#f43f5e");
         var casesCard = createStatCard("Active Cases", "0", "#3b82f6");
         
@@ -733,47 +708,41 @@ public class App extends Application {
         var alertsCard = createStatCard("Emergency Alerts", String.valueOf(alertCount), "#ef4444");
         var programsCard = createStatCard("Programs", String.valueOf(programCount), "#8b5cf6");
         
+        // Stats grid - 3 cards per row for 1280px window
         var statsGrid = new FlowPane(16, 16, populationCard, revenueCard, clearanceCard, casesCard, eventsCard, alertsCard, programsCard);
+        statsGrid.setMaxWidth(Double.MAX_VALUE);
         
-        var recentActivity = new VBox(12);
-        var actTitle = new Label("Recent Activity");
-        actTitle.setStyle("-fx-text-fill: " + (darkMode ? "#ffffff" : "#1a1a1a") + "; -fx-font-size: 14; -fx-font-weight: bold;");
-        
-        recentActivity.getChildren().add(actTitle);
-        
-        // Load real recent activity from audit logs (last 4 activities)
-        var activityLogs = DatabaseHelper.getRecentActivity(4);
-        for (AuditEntry entry : activityLogs) {
-            recentActivity.getChildren().add(createActivityItem(entry.getAction()));
-        }
-        
-        // Create Age Distribution Chart
+        // Create Age Distribution Chart - optimized size for 1280x900 window
         var ageData = DatabaseHelper.getAgeDistribution();
         ObservableList<PieChart.Data> pieChartData = FXCollections.observableArrayList();
         ageData.forEach((ageGroup, count) -> pieChartData.add(new PieChart.Data(ageGroup + " (" + count + ")", count)));
 
         var genderDistributionChart = new PieChart(pieChartData);
         genderDistributionChart.setTitle("Resident Distribution by Age");
+        genderDistributionChart.setTitleSide(javafx.geometry.Side.TOP);
+        genderDistributionChart.setPrefSize(850, 320);
+        genderDistributionChart.setMaxSize(850, 320);
         genderDistributionChart.setLegendVisible(true);
-        genderDistributionChart.setLabelsVisible(false); // Labels on slices can get crowded. Legend is better.
+        genderDistributionChart.setLabelsVisible(false);
+        
+        // Center the chart
+        var chartContainer = new HBox(genderDistributionChart);
+        chartContainer.setAlignment(Pos.CENTER);
+        chartContainer.setMaxWidth(Double.MAX_VALUE);
 
-        var bottomRow = new HBox(24, genderDistributionChart, recentActivity);
-        HBox.setHgrow(genderDistributionChart, Priority.ALWAYS);
-        HBox.setHgrow(recentActivity, Priority.ALWAYS);
-
-        // Announcements section
+        // Announcements section - better text wrapping
         var announcementsSection = new VBox(12);
         var announcementsTitle = new Label("Recent Announcements");
-        announcementsTitle.setStyle("-fx-text-fill: " + (darkMode ? "#ffffff" : "#1a1a1a") + "; -fx-font-size: 14; -fx-font-weight: bold;");
+        announcementsTitle.getStyleClass().add("activity-title");
         announcementsSection.getChildren().add(announcementsTitle);
 
-        // Display latest 5 announcements
+        // Display latest 5 announcements with proper text wrapping
         allAnnouncements.stream()
             .limit(5)
             .forEach(announcement -> {
                 var announcementItem = new HBox(12);
-                announcementItem.setPadding(new Insets(10));
-                announcementItem.setStyle("-fx-background-color: " + (darkMode ? "#1e1e1e" : "#f9fafb") + "; -fx-border-color: " + (darkMode ? "#333" : "#e5e7eb") + "; -fx-border-width: 1; -fx-border-radius: 4;");
+                announcementItem.setPadding(new Insets(12));
+                announcementItem.setStyle("-fx-background-color: #f9fafb; -fx-border-color: #e5e7eb; -fx-border-width: 1; -fx-border-radius: 8;");
                 announcementItem.setAlignment(Pos.TOP_LEFT);
 
                 // Type badge with color
@@ -784,41 +753,46 @@ public class App extends Application {
                     case "Program" -> "#8b5cf6";
                     default -> "#6b7280";
                 };
-                typeBadge.setStyle("-fx-background-color: " + typeColor + "; -fx-text-fill: white; -fx-padding: 3 8; -fx-border-radius: 4; -fx-font-size: 10; -fx-font-weight: bold;");
-                typeBadge.setPrefWidth(80);
+                typeBadge.setStyle("-fx-background-color: " + typeColor + "; -fx-text-fill: white; -fx-padding: 4 10; -fx-background-radius: 6; -fx-font-size: 11; -fx-font-weight: bold;");
+                typeBadge.setMinWidth(100);
+                typeBadge.setAlignment(Pos.CENTER);
 
-                // Announcement details
-                var details = new VBox(4);
+                // Announcement details with proper wrapping
+                var details = new VBox(6);
+                details.setMaxWidth(Double.MAX_VALUE);
+                HBox.setHgrow(details, Priority.ALWAYS);
+                
                 var title = new Label(announcement.getTitle());
-                title.setStyle("-fx-text-fill: " + (darkMode ? "#ffffff" : "#1a1a1a") + "; -fx-font-size: 12; -fx-font-weight: bold;");
+                title.setStyle("-fx-text-fill: #1a1a1a; -fx-font-size: 14; -fx-font-weight: bold;");
                 title.setWrapText(true);
+                title.setMaxWidth(Double.MAX_VALUE);
 
-                var content = new Label(announcement.getContent().length() > 60 ? 
-                    announcement.getContent().substring(0, 60) + "..." : 
+                var content = new Label(announcement.getContent().length() > 80 ? 
+                    announcement.getContent().substring(0, 80) + "..." : 
                     announcement.getContent());
-                content.setStyle("-fx-text-fill: " + (darkMode ? "#b0b0b0" : "#666") + "; -fx-font-size: 10;");
+                content.setStyle("-fx-text-fill: #666; -fx-font-size: 12;");
                 content.setWrapText(true);
+                content.setMaxWidth(Double.MAX_VALUE);
 
                 var meta = new Label("Posted by " + announcement.getPostedBy() + " on " + announcement.getPostedDate() + " | Status: " + announcement.getStatus());
-                meta.setStyle("-fx-text-fill: " + (darkMode ? "#808080" : "#999") + "; -fx-font-size: 9;");
+                meta.setStyle("-fx-text-fill: #999; -fx-font-size: 11;");
+                meta.setWrapText(true);
+                meta.setMaxWidth(Double.MAX_VALUE);
 
                 details.getChildren().addAll(title, content, meta);
                 announcementItem.getChildren().addAll(typeBadge, details);
-                HBox.setHgrow(details, Priority.ALWAYS);
 
                 announcementsSection.getChildren().add(announcementItem);
             });
 
         if (allAnnouncements.isEmpty()) {
             var noAnnouncements = new Label("No announcements yet");
-            noAnnouncements.setStyle("-fx-text-fill: " + (darkMode ? "#808080" : "#999") + "; -fx-font-style: italic;");
+            noAnnouncements.setStyle("-fx-text-fill: #999; -fx-font-style: italic;");
             announcementsSection.getChildren().add(noAnnouncements);
         }
 
-        var middleRow = new HBox(24, bottomRow);
-        HBox.setHgrow(bottomRow, Priority.ALWAYS);
-
-        var content = new VBox(24, statsGrid, middleRow, announcementsSection);
+        var content = new VBox(24, statsGrid, chartContainer, announcementsSection);
+        content.setMaxWidth(Double.MAX_VALUE);
         updateDashboardContent(center, "Analytics & Overview", content);
     }
 
@@ -1012,7 +986,7 @@ public class App extends Application {
         permissionsTable.setItems(permissionsData);
 
         var infoLabel = new Label("Permission Levels: None, View Only, Manage, Full Access");
-        infoLabel.setStyle("-fx-font-size: 11; -fx-text-fill: " + (darkMode ? "#d0d0d0" : "#333") + ";");
+        infoLabel.setStyle("-fx-font-size: 11; -fx-text-fill: " + "#333" + ";");
 
         var content = new VBox(12, infoLabel, permissionsTable);
         VBox.setVgrow(permissionsTable, Priority.ALWAYS);
@@ -1095,7 +1069,7 @@ public class App extends Application {
 
         // Step 1: Select Resident with Search
         Label residentLabel = new Label("Step 1: Select Resident");
-        residentLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + (darkMode ? "#ffffff" : "#1a1a1a") + ";");
+        residentLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
 
         // Search field for residents
         TextField residentSearchField = new TextField();
@@ -1111,7 +1085,7 @@ public class App extends Application {
         
         // ListView to show results
         ListView<Resident> residentListView = new ListView<>();
-        residentListView.setStyle("-fx-control-inner-background: " + (darkMode ? "#0f172a" : "#ffffff") + ";");
+        residentListView.setStyle("-fx-control-inner-background: #ffffff;");
         residentListView.setPrefHeight(150);
         residentListView.setCellFactory(param -> new ListCell<Resident>() {
             @Override
@@ -1153,13 +1127,13 @@ public class App extends Application {
 
         VBox residentSearchBox = new VBox(8, residentSearchField, residentListView);
         var residentBoxLabel = new Label("Resident:");
-        residentBoxLabel.setStyle("-fx-text-fill: " + (darkMode ? "#d0d0d0" : "#333") + ";");
+        residentBoxLabel.setStyle("-fx-text-fill: " + "#333" + ";");
         HBox residentBox = new HBox(10, residentBoxLabel, residentSearchBox);
         residentBox.setAlignment(Pos.TOP_LEFT);
 
         // Step 2: Select Document Type
         Label docTypeLabel = new Label("Step 2: Select Document Type");
-        docTypeLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + (darkMode ? "#ffffff" : "#1a1a1a") + ";");
+        docTypeLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + "#1a1a1a" + ";");
 
         ComboBox<String> docTypeCombo = new ComboBox<>();
         docTypeCombo.setItems(FXCollections.observableArrayList(
@@ -1170,7 +1144,7 @@ public class App extends Application {
         docTypeCombo.setPrefWidth(300);
 
         Label feeLabel = new Label("Fee: ₱0");
-        feeLabel.setStyle("-fx-font-size: 12; -fx-text-fill: " + (darkMode ? "#d0d0d0" : "#333") + ";");
+        feeLabel.setStyle("-fx-font-size: 12; -fx-text-fill: " + "#333" + ";");
         docTypeCombo.setOnAction(e -> {
             if (docTypeCombo.getValue() != null) {
                 double fee = DocumentRequest.getFeeForDocumentType(docTypeCombo.getValue());
@@ -1179,13 +1153,13 @@ public class App extends Application {
         });
 
         var docTypeBoxLabel = new Label("Document Type:");
-        docTypeBoxLabel.setStyle("-fx-text-fill: " + (darkMode ? "#d0d0d0" : "#333") + ";");
+        docTypeBoxLabel.setStyle("-fx-text-fill: " + "#333" + ";");
         HBox docTypeBox = new HBox(10, docTypeBoxLabel, docTypeCombo);
         docTypeBox.setAlignment(Pos.CENTER_LEFT);
 
         // Step 3: Purpose
         Label purposeLabel = new Label("Step 3: Purpose of Request");
-        purposeLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + (darkMode ? "#ffffff" : "#1a1a1a") + ";");
+        purposeLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + "#1a1a1a" + ";");
 
         TextArea purposeArea = new TextArea();
         purposeArea.setPromptText("E.g., For loan application, for employment, for travel");
@@ -1775,9 +1749,28 @@ public class App extends Application {
         photoPreview.setFitWidth(100);
         photoPreview.setFitHeight(100);
         photoPreview.getStyleClass().add("image-preview-frame");
+        
         Button uploadBtn = new Button("Upload Photo");
         TextField imagePathField = new TextField();
         imagePathField.setEditable(false);
+        
+        // For new residents, set default image path and preview
+        if (existingResident == null) {
+            String defaultImagePath = getDefaultResidentImagePath();
+            if (!defaultImagePath.isEmpty()) {
+                imagePathField.setText(defaultImagePath);
+                try {
+                    photoPreview.setImage(new Image(new File(defaultImagePath).toURI().toString()));
+                } catch (Exception ex) {
+                    photoPreview.setImage(getDefaultUserIcon());
+                }
+            } else {
+                photoPreview.setImage(getDefaultUserIcon());
+            }
+        } else {
+            // For existing residents, use their current image or default icon
+            photoPreview.setImage(getDefaultUserIcon());
+        }
 
         TextField firstName = new TextField();
         firstName.setPromptText("First Name");
@@ -1804,7 +1797,13 @@ public class App extends Application {
             File file = fileChooser.showOpenDialog(primaryStage);
             if (file != null) {
                 imagePathField.setText(file.getAbsolutePath());
-                photoPreview.setImage(new Image(file.toURI().toString()));
+                try {
+                    photoPreview.setImage(new Image(file.toURI().toString()));
+                } catch (Exception ex) {
+                    // If image fails to load, use default icon
+                    photoPreview.setImage(getDefaultUserIcon());
+                    showToast("Failed to load image, using default icon.");
+                }
             }
         });
 
@@ -1835,9 +1834,23 @@ public class App extends Application {
             }
             gender.setValue(existingResident.getGender());
             address.setText(existingResident.getAddress());
-            if (existingResident.getImagePath() != null) {
-                imagePathField.setText(existingResident.getImagePath());
-                photoPreview.setImage(new Image(new File(existingResident.getImagePath()).toURI().toString()));
+            if (existingResident.getImagePath() != null && !existingResident.getImagePath().isEmpty()) {
+                File imageFile = new File(existingResident.getImagePath());
+                if (imageFile.exists()) {
+                    try {
+                        imagePathField.setText(existingResident.getImagePath());
+                        photoPreview.setImage(new Image(imageFile.toURI().toString()));
+                    } catch (Exception ex) {
+                        // If image fails to load, use default icon
+                        photoPreview.setImage(getDefaultUserIcon());
+                    }
+                } else {
+                    // Image file doesn't exist, use default icon
+                    photoPreview.setImage(getDefaultUserIcon());
+                }
+            } else {
+                // No image path set, use default icon
+                photoPreview.setImage(getDefaultUserIcon());
             }
         } else {
             birthDate.setValue(LocalDate.now());
@@ -1871,7 +1884,14 @@ public class App extends Application {
                 int id = (existingResident == null) ? 0 : existingResident.getId();
                 Resident r = new Resident(id, firstName.getText(), middleName.getText(), lastName.getText(), 
                         birthDate.getValue().toString(), gender.getValue(), address.getText());
-                r.setImagePath(imagePathField.getText());
+                
+                // Set image path - use default if no custom image was selected
+                String imagePath = imagePathField.getText();
+                if (imagePath == null || imagePath.trim().isEmpty()) {
+                    imagePath = getDefaultResidentImagePath();
+                }
+                r.setImagePath(imagePath);
+                
                 return r;
             }
             return null;
@@ -2154,6 +2174,60 @@ public class App extends Application {
         fadeIn.play();
     }
 
+    private Image getDefaultUserIcon() {
+        // Create a default user icon as a light gray circle with a user silhouette
+        javafx.scene.canvas.Canvas canvas = new javafx.scene.canvas.Canvas(100, 100);
+        javafx.scene.canvas.GraphicsContext gc = canvas.getGraphicsContext2D();
+        
+        // Draw light gray background circle
+        gc.setFill(javafx.scene.paint.Color.web("#d0d0d0"));
+        gc.fillOval(0, 0, 100, 100);
+        
+        // Draw circle border
+        gc.setStroke(javafx.scene.paint.Color.web("#808080"));
+        gc.setLineWidth(2);
+        gc.strokeOval(0, 0, 100, 100);
+        
+        // Draw user silhouette (head and shoulders)
+        gc.setFill(javafx.scene.paint.Color.web("#808080"));
+        // Head
+        gc.fillOval(35, 15, 30, 30);
+        // Shoulders/body
+        gc.fillPolygon(new double[]{15, 85, 75, 25}, new double[]{50, 50, 100, 100}, 4);
+        
+        return javafx.embed.swing.SwingFXUtils.toFXImage(
+            javafx.embed.swing.SwingFXUtils.fromFXImage(
+                canvas.snapshot(null, null), null), null);
+    }
+
+    /**
+     * Gets the absolute path to the default resident photo.
+     * This is used when creating new residents without uploading a custom photo.
+     * @return Absolute path to defaultresident.jpg
+     */
+    private String getDefaultResidentImagePath() {
+        // Try to get from resources first
+        try {
+            var resourceStream = getClass().getResourceAsStream("/assets/defaultresident.jpg");
+            if (resourceStream != null) {
+                resourceStream.close();
+                // Resource exists, but we need the file path for database storage
+                // Fall through to file path approach
+            }
+        } catch (Exception e) {
+            // Ignore, will use file path
+        }
+        
+        // Use the file path in src/assets
+        File defaultImageFile = new File("src/assets/defaultresident.jpg");
+        if (defaultImageFile.exists()) {
+            return defaultImageFile.getAbsolutePath();
+        }
+        
+        // Fallback: return empty string if not found
+        return "";
+    }
+
     private void animateSubmenuHeight(VBox submenu, boolean expand) {
         double targetHeight = expand ? submenu.getChildren().size() * 34 + 8 : 0;
         submenu.setManaged(true);
@@ -2174,12 +2248,209 @@ public class App extends Application {
 
     private VBox createContentBox(String title, String body) {
         var heading = new Label(title);
-        heading.setStyle("-fx-text-fill: " + (darkMode ? "#ffffff" : "#1a1a1a") + "; -fx-font-size: 16; -fx-font-weight: bold;");
+        heading.setStyle("-fx-text-fill: " + "#1a1a1a" + "; -fx-font-size: 16; -fx-font-weight: bold;");
         var content = new Label(body);
-        content.setStyle("-fx-text-fill: " + (darkMode ? "#d0d0d0" : "#333") + "; -fx-font-size: 12;");
+        content.setStyle("-fx-text-fill: " + "#333" + "; -fx-font-size: 12;");
         var box = new VBox(10, heading, content);
         box.getStyleClass().add("content-box");
         return box;
+    }
+
+    // ==================== USER & ACCESS MANAGEMENT ====================
+
+    private void showUserAndAccess(VBox center) {
+        // Three tabs: Manage Roles, Permissions, and Audit Log
+        TabPane tabPane = new TabPane();
+        tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+
+        // Tab 1: Manage Roles
+        Tab rolesTab = new Tab("Manage Roles", createManageRolesPanel());
+        rolesTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+
+        // Tab 2: Role Permissions
+        Tab permissionsTab = new Tab("Role Permissions", createPermissionsPanel());
+        permissionsTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+
+        // Tab 3: Audit Log
+        Tab auditTab = new Tab("Audit Log", createAuditLogPanel());
+        auditTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+
+        tabPane.getTabs().addAll(rolesTab, permissionsTab, auditTab);
+        updateDashboardContent(center, "User & Access Management", tabPane);
+    }
+
+    private VBox createManageRolesPanel() {
+        var rolesTable = new TableView<Role>();
+        rolesTable.getStyleClass().add("table-view");
+        rolesTable.setPrefHeight(400);
+
+        // Columns
+        TableColumn<Role, Number> idCol = new TableColumn<>("ID");
+        idCol.setCellValueFactory(new PropertyValueFactory<>("id"));
+        idCol.setPrefWidth(60);
+
+        TableColumn<Role, String> nameCol = new TableColumn<>("Role Name");
+        nameCol.setCellValueFactory(new PropertyValueFactory<>("name"));
+        nameCol.setPrefWidth(180);
+
+        TableColumn<Role, String> descriptionCol = new TableColumn<>("Description");
+        descriptionCol.setCellValueFactory(new PropertyValueFactory<>("description"));
+        descriptionCol.setPrefWidth(350);
+
+        rolesTable.getColumns().setAll(List.of(idCol, nameCol, descriptionCol));
+
+        // Toolbar buttons
+        Button addButton = new Button("Add Role");
+        addButton.setGraphic(new FontIcon(FontAwesomeSolid.PLUS_CIRCLE));
+
+        Button editButton = new Button("Edit Role");
+        editButton.setGraphic(new FontIcon(FontAwesomeSolid.PENCIL_ALT));
+        editButton.setDisable(true);
+
+        Button deleteButton = new Button("Delete Role");
+        deleteButton.setGraphic(new FontIcon(FontAwesomeSolid.TRASH));
+        deleteButton.setDisable(true);
+
+        rolesTable.getSelectionModel().selectedItemProperty().addListener((obs, oldSelection, newSelection) -> {
+            boolean isSelected = newSelection != null;
+            editButton.setDisable(!isSelected);
+            deleteButton.setDisable(!isSelected);
+        });
+
+        addButton.setOnAction(e -> {
+            showRoleDialog(null).ifPresent(role -> {
+                DatabaseHelper.addRole(role);
+                loadRoleData(rolesTable);
+                showToast("Role created successfully.");
+            });
+        });
+
+        editButton.setOnAction(e -> {
+            Role selected = rolesTable.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                showRoleDialog(selected).ifPresent(role -> {
+                    DatabaseHelper.updateRole(role);
+                    loadRoleData(rolesTable);
+                    showToast("Role updated successfully.");
+                });
+            }
+        });
+
+        deleteButton.setOnAction(e -> {
+            Role selected = rolesTable.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+                confirm.setTitle("Delete Role");
+                confirm.setHeaderText("Are you sure you want to delete the role \"" + selected.getName() + "\"?");
+                confirm.setContentText("This action cannot be undone. Residents with this role will be unaffected.");
+                confirm.showAndWait().ifPresent(response -> {
+                    if (response == ButtonType.OK) {
+                        DatabaseHelper.deleteRole(selected.getId());
+                        loadRoleData(rolesTable);
+                        showToast("Role deleted successfully.");
+                    }
+                });
+            }
+        });
+
+        ToolBar toolBar = new ToolBar(addButton, editButton, deleteButton);
+        toolBar.setStyle("-fx-background-color: transparent; -fx-padding: 0;");
+
+        var content = new VBox(12, toolBar, rolesTable);
+        VBox.setVgrow(rolesTable, Priority.ALWAYS);
+
+        // Load roles
+        loadRoleData(rolesTable);
+        
+        return content;
+    }
+
+    private VBox createPermissionsPanel() {
+        var permissionsTable = new TableView<Map.Entry<String, Map<String, String>>>();
+        permissionsTable.getStyleClass().add("table-view");
+
+        TableColumn<Map.Entry<String, Map<String, String>>, String> roleCol = new TableColumn<>("Role");
+        roleCol.setCellValueFactory(cellData -> new javafx.beans.property.SimpleStringProperty(cellData.getValue().getKey()));
+        roleCol.setPrefWidth(150);
+
+        TableColumn<Map.Entry<String, Map<String, String>>, String> residentDataCol = new TableColumn<>("Resident Data");
+        residentDataCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Resident Data")));
+        residentDataCol.setPrefWidth(120);
+        residentDataCol.setCellFactory(param -> createPermissionCell());
+
+        TableColumn<Map.Entry<String, Map<String, String>>, String> financialsCol = new TableColumn<>("Financials");
+        financialsCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Financials")));
+        financialsCol.setPrefWidth(120);
+        financialsCol.setCellFactory(param -> createPermissionCell());
+
+        TableColumn<Map.Entry<String, Map<String, String>>, String> blotterCol = new TableColumn<>("Blotter/Legal");
+        blotterCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Blotter/Legal")));
+        blotterCol.setPrefWidth(120);
+        blotterCol.setCellFactory(param -> createPermissionCell());
+
+        TableColumn<Map.Entry<String, Map<String, String>>, String> systemCol = new TableColumn<>("System Settings");
+        systemCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("System Settings")));
+        systemCol.setPrefWidth(120);
+        systemCol.setCellFactory(param -> createPermissionCell());
+
+        permissionsTable.getColumns().setAll(List.of(roleCol, residentDataCol, financialsCol, blotterCol, systemCol));
+
+        // Fetch roles dynamically from the database
+        ObservableList<Role> allRoles = DatabaseHelper.getAllRoles();
+        ObservableList<Map.Entry<String, Map<String, String>>> permissionsData = FXCollections.observableArrayList();
+        for (Role role : allRoles) {
+            Map<String, String> permissions = DatabaseHelper.getPermissions(role.getName());
+            permissionsData.add(Map.entry(role.getName(), permissions));
+        }
+        permissionsTable.setItems(permissionsData);
+
+        var infoLabel = new Label("Permission Levels: None, View Only, Manage, Full Access");
+        infoLabel.setStyle("-fx-font-size: 11; -fx-text-fill: " + "#333" + ";");
+
+        var content = new VBox(12, infoLabel, permissionsTable);
+        VBox.setVgrow(permissionsTable, Priority.ALWAYS);
+        
+        return content;
+    }
+
+    private VBox createAuditLogPanel() {
+        var table = new TableView<AuditEntry>();
+        table.getStyleClass().add("table-view");
+
+        TableColumn<AuditEntry, String> timestampCol = new TableColumn<>("Timestamp");
+        timestampCol.setCellValueFactory(new PropertyValueFactory<>("timestamp"));
+        timestampCol.setPrefWidth(180);
+
+        TableColumn<AuditEntry, String> userCol = new TableColumn<>("User");
+        userCol.setCellValueFactory(new PropertyValueFactory<>("user"));
+        userCol.setPrefWidth(120);
+
+        TableColumn<AuditEntry, String> actionCol = new TableColumn<>("Action");
+        actionCol.setCellValueFactory(new PropertyValueFactory<>("action"));
+        actionCol.setPrefWidth(250);
+
+        TableColumn<AuditEntry, String> detailsCol = new TableColumn<>("Details");
+        detailsCol.setCellValueFactory(new PropertyValueFactory<>("details"));
+        detailsCol.setPrefWidth(200);
+
+        TableColumn<AuditEntry, String> categoryCol = new TableColumn<>("Category");
+        categoryCol.setCellValueFactory(new PropertyValueFactory<>("category"));
+        categoryCol.setPrefWidth(100);
+
+        table.getColumns().setAll(List.of(timestampCol, userCol, actionCol, detailsCol, categoryCol));
+
+        // Load real audit logs from database
+        ObservableList<AuditEntry> data = DatabaseHelper.getAuditLogs();
+        table.setItems(data);
+
+        var content = new VBox(12, table);
+        VBox.setVgrow(table, Priority.ALWAYS);
+        
+        return content;
     }
 
     // ==================== COMPLAINT MANAGEMENT ====================
@@ -2218,48 +2489,51 @@ public class App extends Application {
         // Two tabs: Submit complaint and manage complaints
         TabPane tabPane = new TabPane();
         tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        tabPane.getStyleClass().add("tab-pane");
 
         // Tab 1: Submit New Complaint (for residents)
         Tab submitTab = new Tab("Submit Complaint", createComplaintSubmissionPanel());
-        submitTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+        submitTab.getStyleClass().add("tab");
 
         // Tab 2: Manage Complaints (for admin)
         Tab manageTab = new Tab("Manage Complaints", createComplaintsManagementPanel());
-        manageTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+        manageTab.getStyleClass().add("tab");
 
         tabPane.getTabs().addAll(submitTab, manageTab);
         updateDashboardContent(center, "Complaints & Incidents", tabPane);
     }
 
     private VBox createComplaintSubmissionPanel() {
-        VBox panel = new VBox(15);
-        panel.setPadding(new Insets(20));
+        VBox panel = new VBox(16);
+        panel.setPadding(new Insets(24));
+        panel.setMaxWidth(Double.MAX_VALUE);
 
         Label titleLabel = new Label("Submit a Complaint or Incident Report");
-        titleLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + (darkMode ? "#ffffff" : "#1a1a1a") + ";");
+        titleLabel.setStyle("-fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: #1e293b;");
 
         // Complaint Title
         Label complaintTitleLabel = new Label("Complaint Title");
-        complaintTitleLabel.setStyle("-fx-text-fill: " + (darkMode ? "#d0d0d0" : "#333") + ";");
+        complaintTitleLabel.getStyleClass().add("form-label");
         TextField titleField = new TextField();
         titleField.setPromptText("E.g., Noise complaint, street damage, etc.");
-        titleField.setStyle("-fx-font-size: 12;");
+        titleField.getStyleClass().add("text-field");
 
         // Description
         Label descriptionLabel = new Label("Description of Incident");
-        descriptionLabel.setStyle("-fx-text-fill: " + (darkMode ? "#d0d0d0" : "#333") + ";");
+        descriptionLabel.getStyleClass().add("form-label");
         TextArea descriptionArea = new TextArea();
         descriptionArea.setPromptText("Provide detailed information about the complaint or incident...");
         descriptionArea.setWrapText(true);
         descriptionArea.setPrefRowCount(6);
+        descriptionArea.getStyleClass().add("text-area");
 
         // Photo Upload
         Label photoLabel = new Label("Attach Evidence Photo (Optional)");
-        photoLabel.setStyle("-fx-text-fill: " + (darkMode ? "#d0d0d0" : "#333") + ";");
+        photoLabel.getStyleClass().add("form-label");
 
         java.util.concurrent.atomic.AtomicReference<String> selectedPhotoPath = new java.util.concurrent.atomic.AtomicReference<>(null);
         Label photoPathLabel = new Label("No photo selected");
-        photoPathLabel.setStyle("-fx-text-fill: " + (darkMode ? "#b0b0b0" : "#666") + "; -fx-font-size: 11;");
+        photoPathLabel.setStyle("-fx-text-fill: #64748b; -fx-font-size: 13;");
 
         Button uploadPhotoBtn = new Button("Choose Photo", new FontIcon(FontAwesomeSolid.IMAGE));
         uploadPhotoBtn.getStyleClass().add("button-secondary");
@@ -2273,15 +2547,15 @@ public class App extends Application {
             if (file != null) {
                 selectedPhotoPath.set(file.getAbsolutePath());
                 photoPathLabel.setText("✓ " + file.getName());
+                photoPathLabel.setStyle("-fx-text-fill: #10b981; -fx-font-size: 13; -fx-font-weight: 600;");
             }
         });
 
-        HBox photoBox = new HBox(10, uploadPhotoBtn, photoPathLabel);
+        HBox photoBox = new HBox(12, uploadPhotoBtn, photoPathLabel);
         photoBox.setAlignment(Pos.CENTER_LEFT);
 
         // Submit Button
         Button submitBtn = new Button("Submit Complaint");
-        submitBtn.setStyle("-fx-font-size: 12; -fx-padding: 10;");
         submitBtn.getStyleClass().add("button-primary");
         submitBtn.setDisable(true);
 
@@ -2652,7 +2926,7 @@ public class App extends Application {
 
         var container = new VBox(10, tabPane);
         container.setPadding(new Insets(15));
-        container.setStyle("-fx-background-color: " + (darkMode ? "#2b2b2b" : "#f5f5f5") + ";");
+        container.setStyle("-fx-background-color: " + "#f5f5f5" + ";");
 
         center.getChildren().clear();
         center.getChildren().add(container);
@@ -2661,7 +2935,7 @@ public class App extends Application {
     private VBox createAnnouncementPostingPanel() {
         var container = new VBox(15);
         container.setPadding(new Insets(15));
-        container.setStyle("-fx-background-color: " + (darkMode ? "#1e1e1e" : "#ffffff") + ";");
+        container.setStyle("-fx-background-color: " + "#ffffff" + ";");
 
         var titleLabel = new Label("Post New Announcement");
         titleLabel.setStyle("-fx-font-size: 16; -fx-font-weight: bold;");
@@ -2755,7 +3029,7 @@ public class App extends Application {
     private VBox createAnnouncementManagementPanel() {
         var container = new VBox(10);
         container.setPadding(new Insets(15));
-        container.setStyle("-fx-background-color: " + (darkMode ? "#1e1e1e" : "#ffffff") + ";");
+        container.setStyle("-fx-background-color: " + "#ffffff" + ";");
 
         var filterBox = new HBox(10);
         filterBox.setAlignment(Pos.CENTER_LEFT);
@@ -2938,7 +3212,7 @@ public class App extends Application {
     private void showFinancialReports(VBox center) {
         var container = new VBox(15);
         container.setPadding(new Insets(15));
-        container.setStyle("-fx-background-color: " + (darkMode ? "#1e1e1e" : "#ffffff") + ";");
+        container.setStyle("-fx-background-color: " + "#ffffff" + ";");
 
         var titleLabel = new Label("Financial Reports");
         titleLabel.setStyle("-fx-font-size: 16; -fx-font-weight: bold;");
@@ -2950,7 +3224,7 @@ public class App extends Application {
         // Daily Collections Section
         var dailySection = new VBox(10);
         var dailyTitle = new Label("Daily Collections");
-        dailyTitle.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + (darkMode ? "#ffffff" : "#1a1a1a") + ";");
+        dailyTitle.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + "#1a1a1a" + ";");
 
         var dailyTable = new TableView<Map.Entry<String, Double>>();
         dailyTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
@@ -2977,7 +3251,7 @@ public class App extends Application {
         // Monthly Income Section
         var monthlySection = new VBox(10);
         var monthlyTitle = new Label("Monthly Income");
-        monthlyTitle.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + (darkMode ? "#ffffff" : "#1a1a1a") + ";");
+        monthlyTitle.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + "#1a1a1a" + ";");
 
         var monthlyTable = new TableView<Map.Entry<String, Double>>();
         monthlyTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
@@ -3118,7 +3392,7 @@ public class App extends Application {
     private void showSecurityFeatures(VBox center) {
         var container = new VBox(15);
         container.setPadding(new Insets(15));
-        container.setStyle("-fx-background-color: " + (darkMode ? "#1e1e1e" : "#ffffff") + ";");
+        container.setStyle("-fx-background-color: " + "#ffffff" + ";");
 
         var titleLabel = new Label("Security Features");
         titleLabel.setStyle("-fx-font-size: 16; -fx-font-weight: bold;");
@@ -3213,7 +3487,7 @@ public class App extends Application {
 
         // Info box
         var infoBox = new VBox(8);
-        infoBox.setStyle("-fx-border-color: #ddd; -fx-border-width: 1; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + (darkMode ? "#2a2a2a" : "#f9f9f9") + ";");
+        infoBox.setStyle("-fx-border-color: #ddd; -fx-border-width: 1; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + "#f9f9f9" + ";");
         infoBox.getChildren().addAll(
             new Label("Total Users: 4"),
             new Label("Active Sessions: 1"),
@@ -3247,7 +3521,7 @@ public class App extends Application {
 
         // Permissions summary
         var permissionsBox = new VBox(10);
-        permissionsBox.setStyle("-fx-border-color: #ddd; -fx-border-width: 1; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + (darkMode ? "#2a2a2a" : "#f9f9f9") + ";");
+        permissionsBox.setStyle("-fx-border-color: #ddd; -fx-border-width: 1; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + "#f9f9f9" + ";");
         permissionsBox.setPrefHeight(150);
 
         var permLabel = new Label("Permissions for selected role:");
@@ -3289,7 +3563,7 @@ public class App extends Application {
 
         // Encryption status card
         var statusCard = new VBox(10);
-        statusCard.setStyle("-fx-border-color: #10b981; -fx-border-width: 2; -fx-border-radius: 5; -fx-padding: 15; -fx-background-color: " + (darkMode ? "#2a2a2a" : "#f0fdf4") + ";");
+        statusCard.setStyle("-fx-border-color: #10b981; -fx-border-width: 2; -fx-border-radius: 5; -fx-padding: 15; -fx-background-color: " + "#f0fdf4" + ";");
 
         var statusLabel = new Label("AES-256 Encryption Status");
         statusLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold;");
@@ -3301,7 +3575,7 @@ public class App extends Application {
 
         // Encryption options
         var optionsBox = new VBox(10);
-        optionsBox.setStyle("-fx-border-color: #ddd; -fx-border-width: 1; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + (darkMode ? "#2a2a2a" : "#f9f9f9") + ";");
+        optionsBox.setStyle("-fx-border-color: #ddd; -fx-border-width: 1; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + "#f9f9f9" + ";");
 
         var cb1 = new CheckBox("Encrypt Resident Data");
         cb1.setSelected(true);
@@ -3325,7 +3599,7 @@ public class App extends Application {
 
         // Key management
         var keyBox = new VBox(10);
-        keyBox.setStyle("-fx-border-color: #ddd; -fx-border-width: 1; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + (darkMode ? "#2a2a2a" : "#f9f9f9") + ";");
+        keyBox.setStyle("-fx-border-color: #ddd; -fx-border-width: 1; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + "#f9f9f9" + ";");
 
         var keyLabel = new Label("Encryption Key Management");
         keyLabel.setStyle("-fx-font-weight: bold;");
@@ -3357,7 +3631,7 @@ public class App extends Application {
 
         // Backup schedule
         var scheduleBox = new VBox(10);
-        scheduleBox.setStyle("-fx-border-color: #ddd; -fx-border-width: 1; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + (darkMode ? "#2a2a2a" : "#f9f9f9") + ";");
+        scheduleBox.setStyle("-fx-border-color: #ddd; -fx-border-width: 1; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + "#f9f9f9" + ";");
 
         var scheduleLabel = new Label("Backup Schedule");
         scheduleLabel.setStyle("-fx-font-weight: bold;");
@@ -3378,7 +3652,7 @@ public class App extends Application {
 
         // Backup status
         var statusBox = new VBox(10);
-        statusBox.setStyle("-fx-border-color: #3b82f6; -fx-border-width: 2; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + (darkMode ? "#2a2a2a" : "#eff6ff") + ";");
+        statusBox.setStyle("-fx-border-color: #3b82f6; -fx-border-width: 2; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + "#eff6ff" + ";");
 
         var backupStatusLabel = new Label("Last Backup Status");
         backupStatusLabel.setStyle("-fx-font-weight: bold;");
@@ -3392,7 +3666,7 @@ public class App extends Application {
 
         // Backup location and retention
         var settingsBox = new VBox(10);
-        settingsBox.setStyle("-fx-border-color: #ddd; -fx-border-width: 1; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + (darkMode ? "#2a2a2a" : "#f9f9f9") + ";");
+        settingsBox.setStyle("-fx-border-color: #ddd; -fx-border-width: 1; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + "#f9f9f9" + ";");
 
         var locationLabel = new Label("Backup Location: " + System.getProperty("user.home") + "/BDMS_Backups");
         locationLabel.setStyle("-fx-font-size: 11;");
@@ -3422,6 +3696,250 @@ public class App extends Application {
         return panel;
     }
 
+    // ==================== SYSTEM CONFIGURATION ====================
+
+    private void showSystemConfiguration(VBox center) {
+        // Create tabs for document export configuration
+        TabPane tabPane = new TabPane();
+        tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+
+        // Tab 1: Barangay Clearance Export
+        Tab clearanceTab = new Tab("Barangay Clearance", createDocumentExportPanel("Barangay Clearance"));
+        clearanceTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+
+        // Tab 2: Certificate of Residency Export
+        Tab certificateTab = new Tab("Certificate of Residency", createDocumentExportPanel("Certificate of Residency"));
+        certificateTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+
+        tabPane.getTabs().addAll(clearanceTab, certificateTab);
+        updateDashboardContent(center, "System Configuration", tabPane);
+    }
+
+    private VBox createDocumentExportPanel(String documentType) {
+        VBox panel = new VBox(20);
+        panel.setPadding(new Insets(20));
+
+        // Title
+        Label titleLabel = new Label("Select Export Destination: " + documentType);
+        titleLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + "#1a1a1a" + ";");
+
+        // Info box
+        VBox infoBox = new VBox(8);
+        infoBox.setPadding(new Insets(15));
+        infoBox.setStyle("-fx-background-color: " + "#f0f9ff" + "; -fx-border-color: " + "#0284c7" + "; -fx-border-width: 1; -fx-border-radius: 4;");
+
+        Label infoTitle = new Label("Export Configuration");
+        infoTitle.setStyle("-fx-font-size: 12; -fx-font-weight: bold; -fx-text-fill: " + "#0284c7" + ";");
+
+        Label infoDescription = new Label("Configure the destination folder where " + documentType + " documents will be exported. Once set, all exports for this document type will be saved to the selected folder.");
+        infoDescription.setStyle("-fx-font-size: 11; -fx-text-fill: " + "#0369a1" + "; -fx-wrap-text: true;");
+        infoDescription.setMaxWidth(600);
+
+        infoBox.getChildren().addAll(infoTitle, infoDescription);
+
+        // Current folder display
+        Label folderLabel = new Label("Target Folder:");
+        folderLabel.setStyle("-fx-font-size: 12; -fx-font-weight: bold; -fx-text-fill: " + "#1a1a1a" + ";");
+
+        TextField folderPathField = new TextField();
+        folderPathField.setPrefWidth(500);
+        folderPathField.setEditable(false);
+        folderPathField.setStyle("-fx-font-size: 11; -fx-padding: 10;");
+        folderPathField.setPromptText("No folder selected yet");
+        
+        // Retrieve previously selected folder if exists
+        String savedPath = getStoredExportPath(documentType);
+        if (savedPath != null && !savedPath.isEmpty()) {
+            folderPathField.setText(savedPath);
+        }
+
+        // Browse button
+        Button browseButton = new Button("Browse Folder", new FontIcon(FontAwesomeSolid.FOLDER_OPEN));
+        browseButton.setStyle("-fx-font-size: 11; -fx-padding: 10;");
+        browseButton.setOnAction(e -> {
+            DirectoryChooser dirChooser = new DirectoryChooser();
+            dirChooser.setTitle("Select Export Folder for " + documentType);
+            File selectedDir = dirChooser.showDialog(primaryStage);
+            if (selectedDir != null) {
+                folderPathField.setText(selectedDir.getAbsolutePath());
+                saveExportPath(documentType, selectedDir.getAbsolutePath());
+                showToast("Export folder saved for " + documentType);
+            }
+        });
+
+        HBox folderSelectionBox = new HBox(12, folderPathField, browseButton);
+        folderSelectionBox.setAlignment(Pos.CENTER_LEFT);
+
+        // Export documents section
+        Label exportLabel = new Label("Export Documents");
+        exportLabel.setStyle("-fx-font-size: 12; -fx-font-weight: bold; -fx-text-fill: " + "#1a1a1a" + ";");
+
+        VBox exportInfo = new VBox(10);
+        exportInfo.setPadding(new Insets(12));
+        exportInfo.setStyle("-fx-background-color: " + "#f9fafb" + "; -fx-border-color: " + "#e5e7eb" + "; -fx-border-width: 1; -fx-border-radius: 4;");
+
+        Label exportDescription = new Label("Select a document type to batch export. This will export all pending/approved " + documentType + " documents to the target folder above.");
+        exportDescription.setStyle("-fx-font-size: 11; -fx-text-fill: " + "#666" + "; -fx-wrap-text: true;");
+        exportDescription.setMaxWidth(600);
+        exportInfo.getChildren().add(exportDescription);
+
+        // Export buttons
+        HBox exportButtonsBox = new HBox(12);
+        exportButtonsBox.setAlignment(Pos.CENTER_LEFT);
+
+        Button exportAllButton = new Button("Export All " + documentType + "s", new FontIcon(FontAwesomeSolid.FILE_EXPORT));
+        exportAllButton.setStyle("-fx-font-size: 11; -fx-padding: 10;");
+        exportAllButton.setOnAction(e -> {
+            String targetPath = folderPathField.getText();
+            if (targetPath == null || targetPath.isEmpty() || "No folder selected yet".equals(targetPath)) {
+                showToast("Please select a target folder first.");
+                return;
+            }
+            exportDocumentsForType(documentType, targetPath);
+        });
+
+        Button exportPendingButton = new Button("Export Pending Only", new FontIcon(FontAwesomeSolid.HOURGLASS_HALF));
+        exportPendingButton.setStyle("-fx-font-size: 11; -fx-padding: 10;");
+        exportPendingButton.setOnAction(e -> {
+            String targetPath = folderPathField.getText();
+            if (targetPath == null || targetPath.isEmpty() || "No folder selected yet".equals(targetPath)) {
+                showToast("Please select a target folder first.");
+                return;
+            }
+            exportPendingDocumentsForType(documentType, targetPath);
+        });
+
+        exportButtonsBox.getChildren().addAll(exportAllButton, exportPendingButton);
+
+        // Statistics section
+        Label statsLabel = new Label("Document Statistics");
+        statsLabel.setStyle("-fx-font-size: 12; -fx-font-weight: bold; -fx-text-fill: " + "#1a1a1a" + ";");
+
+        HBox statsBox = new HBox(24);
+        statsBox.setPadding(new Insets(12));
+        statsBox.setStyle("-fx-background-color: " + "#f0f9ff" + "; -fx-border-radius: 4;");
+
+        VBox totalBox = new VBox(4);
+        Label totalLabel = new Label("Total");
+        totalLabel.setStyle("-fx-font-size: 10; -fx-text-fill: " + "#64748b" + ";");
+        Label totalCount = new Label("0");
+        totalCount.setStyle("-fx-font-size: 18; -fx-font-weight: bold; -fx-text-fill: " + "#0284c7" + ";");
+        totalBox.getChildren().addAll(totalLabel, totalCount);
+
+        VBox pendingBox = new VBox(4);
+        Label pendingLabel = new Label("Pending");
+        pendingLabel.setStyle("-fx-font-size: 10; -fx-text-fill: " + "#64748b" + ";");
+        Label pendingCount = new Label("0");
+        pendingCount.setStyle("-fx-font-size: 18; -fx-font-weight: bold; -fx-text-fill: " + "#f59e0b" + ";");
+        pendingBox.getChildren().addAll(pendingLabel, pendingCount);
+
+        VBox completedBox = new VBox(4);
+        Label completedLabel = new Label("Completed");
+        completedLabel.setStyle("-fx-font-size: 10; -fx-text-fill: " + "#64748b" + ";");
+        Label completedCount = new Label("0");
+        completedCount.setStyle("-fx-font-size: 18; -fx-font-weight: bold; -fx-text-fill: " + "#059669" + ";");
+        completedBox.getChildren().addAll(completedLabel, completedCount);
+
+        statsBox.getChildren().addAll(totalBox, pendingBox, completedBox);
+
+        // Update stats
+        updateDocumentStats(documentType, totalCount, pendingCount, completedCount);
+
+        panel.getChildren().addAll(titleLabel, infoBox, folderLabel, folderSelectionBox, new Separator(), 
+                                    exportLabel, exportInfo, exportButtonsBox, new Separator(),
+                                    statsLabel, statsBox);
+
+        return panel;
+    }
+
+    private String getStoredExportPath(String documentType) {
+        // This would typically be stored in preferences or database
+        // For now, using a simple in-memory map (would be persisted in production)
+        Map<String, String> exportPaths = new java.util.HashMap<>();
+        return exportPaths.get(documentType);
+    }
+
+    private void saveExportPath(String documentType, String path) {
+        // This would typically save to preferences or database
+        // For now, using a simple in-memory map
+        Map<String, String> exportPaths = new java.util.HashMap<>();
+        exportPaths.put(documentType, path);
+    }
+
+    private void exportDocumentsForType(String documentType, String targetFolder) {
+        try {
+            ObservableList<DocumentRequest> requests = DatabaseHelper.getAllDocumentRequests();
+            int exportCount = 0;
+            
+            for (DocumentRequest req : requests) {
+                if (documentType.equals(req.getDocumentType())) {
+                    // Generate and save document to target folder
+                    Optional<Resident> resident = DatabaseHelper.getResidentById(req.getResidentId());
+                    if (resident.isPresent()) {
+                        String fileName = documentType.replace(" ", "_") + "_" + req.getId() + "_" + System.currentTimeMillis() + ".pdf";
+                        String filePath = new File(targetFolder, fileName).getAbsolutePath();
+                        // In production: generateAndSaveDocument(req, resident.get(), filePath);
+                        exportCount++;
+                    }
+                }
+            }
+            
+            showToast("Exported " + exportCount + " " + documentType + " document(s) to " + targetFolder);
+        } catch (Exception ex) {
+            showToast("Error exporting documents: " + ex.getMessage());
+        }
+    }
+
+    private void exportPendingDocumentsForType(String documentType, String targetFolder) {
+        try {
+            ObservableList<DocumentRequest> requests = DatabaseHelper.getAllDocumentRequests();
+            int exportCount = 0;
+            
+            for (DocumentRequest req : requests) {
+                if (documentType.equals(req.getDocumentType()) && "PENDING".equals(req.getStatus())) {
+                    // Generate and save document to target folder
+                    Optional<Resident> resident = DatabaseHelper.getResidentById(req.getResidentId());
+                    if (resident.isPresent()) {
+                        String fileName = documentType.replace(" ", "_") + "_PENDING_" + req.getId() + "_" + System.currentTimeMillis() + ".pdf";
+                        String filePath = new File(targetFolder, fileName).getAbsolutePath();
+                        // In production: generateAndSaveDocument(req, resident.get(), filePath);
+                        exportCount++;
+                    }
+                }
+            }
+            
+            showToast("Exported " + exportCount + " pending " + documentType + " document(s) to " + targetFolder);
+        } catch (Exception ex) {
+            showToast("Error exporting documents: " + ex.getMessage());
+        }
+    }
+
+    private void updateDocumentStats(String documentType, Label totalLabel, Label pendingLabel, Label completedLabel) {
+        try {
+            ObservableList<DocumentRequest> requests = DatabaseHelper.getAllDocumentRequests();
+            int total = 0, pending = 0, completed = 0;
+            
+            for (DocumentRequest req : requests) {
+                if (documentType.equals(req.getDocumentType())) {
+                    total++;
+                    if ("PENDING".equals(req.getStatus())) {
+                        pending++;
+                    } else if ("COMPLETED".equals(req.getStatus())) {
+                        completed++;
+                    }
+                }
+            }
+            
+            totalLabel.setText(String.valueOf(total));
+            pendingLabel.setText(String.valueOf(pending));
+            completedLabel.setText(String.valueOf(completed));
+        } catch (Exception ex) {
+            totalLabel.setText("0");
+            pendingLabel.setText("0");
+            completedLabel.setText("0");
+        }
+    }
+
     private Label createPermissionBadge(String permission, String color) {
         var badge = new Label(permission);
         badge.setStyle("-fx-background-color: " + color + "; -fx-text-fill: white; -fx-padding: 6 10; -fx-border-radius: 12; -fx-background-radius: 12; -fx-font-size: 11;");
@@ -3439,14 +3957,21 @@ public class App extends Application {
     private VBox createStatCard(String title, String value, String color) {
         var card = new VBox(8);
         card.getStyleClass().add("stat-card");
+        card.setPrefWidth(180);
+        card.setPrefHeight(100);
+        card.setMinWidth(160);
+        card.setMaxWidth(200);
+        card.setAlignment(Pos.CENTER);
 
         var valueLabel = new Label(value);
-        // Dynamic color is one of the few good uses for inline style
         valueLabel.setStyle("-fx-text-fill: " + color + ";");
         valueLabel.getStyleClass().add("stat-card-value");
 
         var titleLabel = new Label(title);
-        titleLabel.setStyle("-fx-text-fill: " + (darkMode ? "#b0b0b0" : "#666") + "; -fx-font-size: 12;");
+        titleLabel.setStyle("-fx-text-fill: #666; -fx-font-size: 13; -fx-text-alignment: center;");
+        titleLabel.setWrapText(true);
+        titleLabel.setMaxWidth(160);
+        titleLabel.setAlignment(Pos.CENTER);
 
         card.getChildren().addAll(valueLabel, titleLabel);
         return card;
@@ -3464,6 +3989,598 @@ public class App extends Application {
 
         item.getChildren().addAll(dot, textLabel);
         return item;
+    }
+
+    // ==================== MAINTENANCE TAB ====================
+    
+    private void showMaintenance(VBox center) {
+        TabPane tabPane = new TabPane();
+        tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+
+        // Tab 1: Database Backup & Maintenance
+        Tab backupTab = new Tab("Database Backup", createDatabaseBackupPanel());
+        
+        // Tab 2: Notifications Management
+        Tab notificationsTab = new Tab("Notifications", createNotificationsManagementPanel());
+        
+        // Tab 3: System Health
+        Tab healthTab = new Tab("System Health", createSystemHealthPanel());
+
+        tabPane.getTabs().addAll(backupTab, notificationsTab, healthTab);
+        updateDashboardContent(center, "Maintenance & Security", tabPane);
+    }
+
+    private VBox createDatabaseBackupPanel() {
+        VBox panel = new VBox(20);
+        panel.setPadding(new Insets(20));
+
+        // Database Info Section
+        Label infoTitle = new Label("Database Information");
+        infoTitle.setStyle("-fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: " + "#1a1a1a" + ";");
+
+        long dbSize = DatabaseHelper.getDatabaseSize();
+        String sizeStr = String.format("%.2f MB", dbSize / (1024.0 * 1024.0));
+        
+        Label dbSizeLabel = new Label("Database Size: " + sizeStr);
+        dbSizeLabel.setStyle("-fx-font-size: 14; -fx-text-fill: " + "#333" + ";");
+
+        Label dbLocationLabel = new Label("Location: ~/bdms_v2");
+        dbLocationLabel.setStyle("-fx-font-size: 14; -fx-text-fill: " + "#333" + ";");
+
+        VBox infoBox = new VBox(10, infoTitle, dbSizeLabel, dbLocationLabel);
+        infoBox.setPadding(new Insets(15));
+        infoBox.setStyle("-fx-background-color: " + "#f9fafb" + "; -fx-border-color: " + "#e5e7eb" + "; -fx-border-width: 1; -fx-border-radius: 8; -fx-background-radius: 8;");
+
+        // Backup Section
+        Label backupTitle = new Label("Create Backup");
+        backupTitle.setStyle("-fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: " + "#1a1a1a" + ";");
+
+        TextField backupPathField = new TextField();
+        backupPathField.setPromptText("Enter backup file path...");
+        backupPathField.setText(System.getProperty("user.home") + "/bdms_backup_" + 
+            java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")) + ".zip");
+        backupPathField.setPrefWidth(500);
+
+        Button browseBtn = new Button("Browse...");
+        browseBtn.setOnAction(e -> {
+            FileChooser fileChooser = new FileChooser();
+            fileChooser.setTitle("Select Backup Location");
+            fileChooser.setInitialFileName("bdms_backup_" + 
+                java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")) + ".zip");
+            fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("ZIP Files", "*.zip"));
+            File file = fileChooser.showSaveDialog(primaryStage);
+            if (file != null) {
+                backupPathField.setText(file.getAbsolutePath());
+            }
+        });
+
+        HBox pathBox = new HBox(10, backupPathField, browseBtn);
+        pathBox.setAlignment(Pos.CENTER_LEFT);
+
+        Button backupBtn = new Button("Create Backup Now", new FontIcon(FontAwesomeSolid.DATABASE));
+        backupBtn.getStyleClass().add("button-primary");
+        backupBtn.setOnAction(e -> {
+            String path = backupPathField.getText().trim();
+            if (path.isEmpty()) {
+                showToast("Please enter a backup path");
+                return;
+            }
+            
+            backupBtn.setDisable(true);
+            backupBtn.setText("Creating backup...");
+            
+            // Run backup in background
+            new Thread(() -> {
+                boolean success = DatabaseHelper.backupDatabase(path);
+                Platform.runLater(() -> {
+                    backupBtn.setDisable(false);
+                    backupBtn.setText("Create Backup Now");
+                    if (success) {
+                        showToast("✓ Database backup created successfully!");
+                        DatabaseHelper.addNotification(new Notification(
+                            "Backup Created",
+                            "Database backup saved to: " + path,
+                            "SUCCESS",
+                            "database"
+                        ));
+                    } else {
+                        showToast("✗ Backup failed. Check console for errors.");
+                    }
+                });
+            }).start();
+        });
+
+        VBox backupBox = new VBox(15, backupTitle, pathBox, backupBtn);
+        backupBox.setPadding(new Insets(15));
+        backupBox.setStyle("-fx-background-color: " + "#f9fafb" + "; -fx-border-color: " + "#e5e7eb" + "; -fx-border-width: 1; -fx-border-radius: 8; -fx-background-radius: 8;");
+
+        // Auto-backup settings
+        Label autoBackupTitle = new Label("Automatic Backup");
+        autoBackupTitle.setStyle("-fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: " + "#1a1a1a" + ";");
+
+        CheckBox enableAutoBackup = new CheckBox("Enable automatic daily backups");
+        enableAutoBackup.setStyle("-fx-text-fill: " + "#333" + ";");
+
+        Label scheduleLabel = new Label("Backup Schedule: Daily at 2:00 AM");
+        scheduleLabel.setStyle("-fx-font-size: 12; -fx-text-fill: " + "#666" + ";");
+
+        VBox autoBackupBox = new VBox(10, autoBackupTitle, enableAutoBackup, scheduleLabel);
+        autoBackupBox.setPadding(new Insets(15));
+        autoBackupBox.setStyle("-fx-background-color: " + "#f9fafb" + "; -fx-border-color: " + "#e5e7eb" + "; -fx-border-width: 1; -fx-border-radius: 8; -fx-background-radius: 8;");
+
+        panel.getChildren().addAll(infoBox, backupBox, autoBackupBox);
+
+        ScrollPane scrollPane = new ScrollPane(panel);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setStyle("-fx-background-color: transparent;");
+        
+        VBox container = new VBox(scrollPane);
+        VBox.setVgrow(scrollPane, Priority.ALWAYS);
+        return container;
+    }
+
+    private VBox createNotificationsManagementPanel() {
+        VBox panel = new VBox(15);
+        panel.setPadding(new Insets(20));
+
+        // Header with actions
+        Label title = new Label("Notification Management");
+        title.setStyle("-fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: " + "#1a1a1a" + ";");
+
+        Button createBtn = new Button("Create Notification", new FontIcon(FontAwesomeSolid.PLUS_CIRCLE));
+        createBtn.getStyleClass().add("button-primary");
+        createBtn.setOnAction(e -> showCreateNotificationDialog());
+
+        Button markAllReadBtn = new Button("Mark All as Read", new FontIcon(FontAwesomeSolid.CHECK));
+        markAllReadBtn.setOnAction(e -> {
+            DatabaseHelper.markAllNotificationsAsRead();
+            showToast("All notifications marked as read");
+            refreshNotificationsTable();
+        });
+
+        Button deleteReadBtn = new Button("Delete Read", new FontIcon(FontAwesomeSolid.TRASH));
+        deleteReadBtn.setOnAction(e -> {
+            DatabaseHelper.deleteAllReadNotifications();
+            showToast("Read notifications deleted");
+            refreshNotificationsTable();
+        });
+
+        HBox headerBox = new HBox(15, title, new Region(), createBtn, markAllReadBtn, deleteReadBtn);
+        HBox.setHgrow(headerBox.getChildren().get(1), Priority.ALWAYS);
+        headerBox.setAlignment(Pos.CENTER_LEFT);
+
+        // Notifications table
+        TableView<Notification> notificationsTable = new TableView<>();
+        notificationsTable.getStyleClass().add("table-view");
+
+        TableColumn<Notification, Boolean> readCol = new TableColumn<>("Status");
+        readCol.setCellValueFactory(new PropertyValueFactory<>("isRead"));
+        readCol.setPrefWidth(80);
+        readCol.setCellFactory(col -> new TableCell<Notification, Boolean>() {
+            @Override
+            protected void updateItem(Boolean isRead, boolean empty) {
+                super.updateItem(isRead, empty);
+                if (empty || isRead == null) {
+                    setGraphic(null);
+                } else {
+                    Label badge = new Label(isRead ? "Read" : "Unread");
+                    badge.setStyle("-fx-background-color: " + (isRead ? "#6b7280" : "#3b82f6") + 
+                        "; -fx-text-fill: white; -fx-padding: 3 8; -fx-border-radius: 10; -fx-background-radius: 10; -fx-font-size: 10;");
+                    setGraphic(badge);
+                }
+            }
+        });
+
+        TableColumn<Notification, String> typeCol = new TableColumn<>("Type");
+        typeCol.setCellValueFactory(new PropertyValueFactory<>("type"));
+        typeCol.setPrefWidth(100);
+        typeCol.setCellFactory(col -> new TableCell<Notification, String>() {
+            @Override
+            protected void updateItem(String type, boolean empty) {
+                super.updateItem(type, empty);
+                if (empty || type == null) {
+                    setGraphic(null);
+                } else {
+                    String color = switch (type) {
+                        case "SUCCESS" -> "#10b981";
+                        case "ERROR" -> "#ef4444";
+                        case "WARNING" -> "#f59e0b";
+                        default -> "#3b82f6";
+                    };
+                    Label badge = new Label(type);
+                    badge.setStyle("-fx-background-color: " + color + 
+                        "; -fx-text-fill: white; -fx-padding: 3 8; -fx-border-radius: 10; -fx-background-radius: 10; -fx-font-size: 10;");
+                    setGraphic(badge);
+                }
+            }
+        });
+
+        TableColumn<Notification, String> titleCol = new TableColumn<>("Title");
+        titleCol.setCellValueFactory(new PropertyValueFactory<>("title"));
+        titleCol.setPrefWidth(200);
+
+        TableColumn<Notification, String> messageCol = new TableColumn<>("Message");
+        messageCol.setCellValueFactory(new PropertyValueFactory<>("message"));
+        messageCol.setPrefWidth(300);
+
+        TableColumn<Notification, String> timestampCol = new TableColumn<>("Timestamp");
+        timestampCol.setCellValueFactory(new PropertyValueFactory<>("timestamp"));
+        timestampCol.setPrefWidth(150);
+
+        TableColumn<Notification, Void> actionsCol = new TableColumn<>("Actions");
+        actionsCol.setPrefWidth(150);
+        actionsCol.setCellFactory(col -> new TableCell<Notification, Void>() {
+            private final Button deleteBtn = new Button("", new FontIcon(FontAwesomeSolid.TRASH));
+            {
+                deleteBtn.getStyleClass().add("button-danger");
+                deleteBtn.setOnAction(e -> {
+                    Notification notification = getTableView().getItems().get(getIndex());
+                    DatabaseHelper.deleteNotification(notification.getId());
+                    showToast("Notification deleted");
+                    refreshNotificationsTable();
+                });
+            }
+
+            @Override
+            protected void updateItem(Void item, boolean empty) {
+                super.updateItem(item, empty);
+                setGraphic(empty ? null : deleteBtn);
+            }
+        });
+
+        notificationsTable.getColumns().addAll(readCol, typeCol, titleCol, messageCol, timestampCol, actionsCol);
+        notificationsTable.setItems(DatabaseHelper.getAllNotifications());
+
+        // Store reference for refreshing
+        this.notificationsManagementTable = notificationsTable;
+
+        panel.getChildren().addAll(headerBox, notificationsTable);
+        VBox.setVgrow(notificationsTable, Priority.ALWAYS);
+
+        return panel;
+    }
+
+    private TableView<Notification> notificationsManagementTable;
+
+    private void refreshNotificationsTable() {
+        if (notificationsManagementTable != null) {
+            notificationsManagementTable.setItems(DatabaseHelper.getAllNotifications());
+        }
+    }
+
+    private void showCreateNotificationDialog() {
+        Dialog<Notification> dialog = new Dialog<>();
+        dialog.setTitle("Create Notification");
+        dialog.setHeaderText("Send a new notification to the system");
+
+        ButtonType sendButtonType = new ButtonType("Send", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(sendButtonType, ButtonType.CANCEL);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(20, 150, 10, 10));
+
+        TextField titleField = new TextField();
+        titleField.setPromptText("Notification title");
+
+        TextArea messageField = new TextArea();
+        messageField.setPromptText("Notification message");
+        messageField.setPrefRowCount(3);
+
+        ComboBox<String> typeCombo = new ComboBox<>();
+        typeCombo.setItems(FXCollections.observableArrayList("INFO", "SUCCESS", "WARNING", "ERROR"));
+        typeCombo.setValue("INFO");
+
+        ComboBox<String> iconCombo = new ComboBox<>();
+        iconCombo.setItems(FXCollections.observableArrayList(
+            "bell", "check-circle", "exclamation-triangle", "info-circle", 
+            "database", "bullhorn", "file-alt", "user", "cog"
+        ));
+        iconCombo.setValue("bell");
+
+        grid.add(new Label("Title:"), 0, 0);
+        grid.add(titleField, 1, 0);
+        grid.add(new Label("Message:"), 0, 1);
+        grid.add(messageField, 1, 1);
+        grid.add(new Label("Type:"), 0, 2);
+        grid.add(typeCombo, 1, 2);
+        grid.add(new Label("Icon:"), 0, 3);
+        grid.add(iconCombo, 1, 3);
+
+        dialog.getDialogPane().setContent(grid);
+
+        dialog.setResultConverter(dialogButton -> {
+            if (dialogButton == sendButtonType) {
+                return new Notification(
+                    titleField.getText(),
+                    messageField.getText(),
+                    typeCombo.getValue(),
+                    iconCombo.getValue()
+                );
+            }
+            return null;
+        });
+
+        dialog.showAndWait().ifPresent(notification -> {
+            DatabaseHelper.addNotification(notification);
+            showToast("Notification created successfully");
+            refreshNotificationsTable();
+        });
+    }
+
+    private VBox createSystemHealthPanel() {
+        VBox panel = new VBox(20);
+        panel.setPadding(new Insets(20));
+
+        Label title = new Label("System Health & Statistics");
+        title.setStyle("-fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: " + "#1a1a1a" + ";");
+
+        // Table counts
+        Map<String, Integer> counts = DatabaseHelper.getTableCounts();
+        
+        GridPane statsGrid = new GridPane();
+        statsGrid.setHgap(20);
+        statsGrid.setVgap(15);
+        statsGrid.setPadding(new Insets(15));
+        statsGrid.setStyle("-fx-background-color: " + "#f9fafb" + "; -fx-border-color: " + "#e5e7eb" + "; -fx-border-width: 1; -fx-border-radius: 8; -fx-background-radius: 8;");
+
+        int row = 0;
+        for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+            Label tableLabel = new Label(entry.getKey().replace("_", " ").toUpperCase() + ":");
+            tableLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: " + "#333" + ";");
+            
+            Label countLabel = new Label(String.format("%,d records", entry.getValue()));
+            countLabel.setStyle("-fx-text-fill: " + "#666" + ";");
+            
+            statsGrid.add(tableLabel, 0, row);
+            statsGrid.add(countLabel, 1, row);
+            row++;
+        }
+
+        // System info
+        Label sysInfoTitle = new Label("System Information");
+        sysInfoTitle.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + "#1a1a1a" + ";");
+
+        VBox sysInfoBox = new VBox(10);
+        sysInfoBox.setPadding(new Insets(15));
+        sysInfoBox.setStyle("-fx-background-color: " + "#f9fafb" + "; -fx-border-color: " + "#e5e7eb" + "; -fx-border-width: 1; -fx-border-radius: 8; -fx-background-radius: 8;");
+
+        Label javaVersion = new Label("Java Version: " + System.getProperty("java.version"));
+        Label osName = new Label("Operating System: " + System.getProperty("os.name"));
+        Label osVersion = new Label("OS Version: " + System.getProperty("os.version"));
+        Label userHome = new Label("User Home: " + System.getProperty("user.home"));
+
+        javaVersion.setStyle("-fx-text-fill: " + "#333" + ";");
+        osName.setStyle("-fx-text-fill: " + "#333" + ";");
+        osVersion.setStyle("-fx-text-fill: " + "#333" + ";");
+        userHome.setStyle("-fx-text-fill: " + "#333" + ";");
+
+        sysInfoBox.getChildren().addAll(sysInfoTitle, javaVersion, osName, osVersion, userHome);
+
+        panel.getChildren().addAll(title, statsGrid, sysInfoBox);
+
+        ScrollPane scrollPane = new ScrollPane(panel);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setStyle("-fx-background-color: transparent;");
+        
+        VBox container = new VBox(scrollPane);
+        VBox.setVgrow(scrollPane, Priority.ALWAYS);
+        return container;
+    }
+
+    // ==================== NOTIFICATION DROPDOWN ====================
+    
+    private Popup notificationPopup;
+    private VBox notificationDropdownContent;
+
+    private void createNotificationDropdown(StackPane notificationButton) {
+        notificationPopup = new Popup();
+        notificationPopup.setAutoHide(true);
+        notificationPopup.setHideOnEscape(true);
+
+        notificationDropdownContent = new VBox(0);
+        notificationDropdownContent.setStyle(
+            "-fx-background-color: #ffffff;" +
+            "-fx-border-color: #e5e7eb;" +
+            "-fx-border-width: 1;" +
+            "-fx-border-radius: 8;" +
+            "-fx-background-radius: 8;" +
+            "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.2), 10, 0, 0, 2);"
+        );
+        notificationDropdownContent.setPrefWidth(380);
+        notificationDropdownContent.setMaxHeight(500);
+
+        // Header
+        HBox header = new HBox(10);
+        header.setPadding(new Insets(15));
+        header.setStyle("-fx-border-color: #e5e7eb; -fx-border-width: 0 0 1 0;");
+        header.setAlignment(Pos.CENTER_LEFT);
+
+        Label headerTitle = new Label("Recent Activity");
+        headerTitle.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
+
+        header.getChildren().add(headerTitle);
+
+        // Scrollable activity list
+        ScrollPane scrollPane = new ScrollPane();
+        scrollPane.setStyle("-fx-background-color: transparent; -fx-background: transparent;");
+        scrollPane.setFitToWidth(true);
+        scrollPane.setPrefHeight(400);
+        scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+
+        VBox activityList = new VBox(0);
+        var activityLogs = DatabaseHelper.getRecentActivity(10);
+
+        if (activityLogs.isEmpty()) {
+            Label emptyLabel = new Label("No recent activity");
+            emptyLabel.setStyle("-fx-text-fill: #999; -fx-font-style: italic; -fx-padding: 30;");
+            activityList.getChildren().add(emptyLabel);
+        } else {
+            for (AuditEntry entry : activityLogs) {
+                activityList.getChildren().add(createActivityDropdownItem(entry));
+            }
+        }
+
+        scrollPane.setContent(activityList);
+
+        notificationDropdownContent.getChildren().addAll(header, scrollPane);
+        notificationPopup.getContent().add(notificationDropdownContent);
+    }
+    
+    private VBox createActivityDropdownItem(AuditEntry entry) {
+        VBox item = new VBox(5);
+        item.setPadding(new Insets(12, 15, 12, 15));
+        item.setStyle("-fx-border-color: #e5e7eb; -fx-border-width: 0 0 1 0;");
+        
+        Label actionLabel = new Label(entry.getAction());
+        actionLabel.setStyle("-fx-font-size: 13; -fx-text-fill: #1a1a1a; -fx-font-weight: 600;");
+        actionLabel.setWrapText(true);
+        
+        Label detailsLabel = new Label(entry.getDetails());
+        detailsLabel.setStyle("-fx-font-size: 12; -fx-text-fill: #666;");
+        detailsLabel.setWrapText(true);
+        
+        Label timeLabel = new Label(entry.getTimestamp());
+        timeLabel.setStyle("-fx-font-size: 11; -fx-text-fill: #999;");
+        
+        item.getChildren().addAll(actionLabel, detailsLabel, timeLabel);
+        return item;
+    }
+
+    private VBox createNotificationItem(Notification notification) {
+        VBox item = new VBox(5);
+        item.setPadding(new Insets(12, 15, 12, 15));
+        item.setStyle("-fx-cursor: hand; -fx-border-color: " + "#e5e7eb" + "; -fx-border-width: 0 0 1 0;");
+        
+        // Hover effect
+        item.setOnMouseEntered(e -> item.setStyle("-fx-cursor: hand; -fx-background-color: " + "#f3f4f6" + "; -fx-border-color: " + "#e5e7eb" + "; -fx-border-width: 0 0 1 0;"));
+        item.setOnMouseExited(e -> item.setStyle("-fx-cursor: hand; -fx-border-color: " + "#e5e7eb" + "; -fx-border-width: 0 0 1 0;"));
+        
+        item.setOnMouseClicked(e -> {
+            DatabaseHelper.markNotificationAsRead(notification.getId());
+            refreshNotificationDropdown();
+            updateNotificationBadge();
+            notificationPopup.hide();
+        });
+
+        // Icon and title row
+        HBox titleRow = new HBox(10);
+        titleRow.setAlignment(Pos.CENTER_LEFT);
+
+        // Icon based on type
+        String iconColor = switch (notification.getType()) {
+            case "SUCCESS" -> "#10b981";
+            case "ERROR" -> "#ef4444";
+            case "WARNING" -> "#f59e0b";
+            default -> "#3b82f6";
+        };
+
+        Circle iconCircle = new Circle(16);
+        iconCircle.setFill(Color.web(iconColor));
+        iconCircle.setOpacity(0.2);
+
+        FontIcon icon = new FontIcon();
+        try {
+            icon.setIconLiteral("fas-" + notification.getIcon());
+        } catch (Exception e) {
+            icon.setIconLiteral("fas-bell");
+        }
+        icon.setIconColor(Color.web(iconColor));
+        icon.setIconSize(14);
+
+        StackPane iconStack = new StackPane(iconCircle, icon);
+
+        Label titleLabel = new Label(notification.getTitle());
+        titleLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 13; -fx-text-fill: " + "#1a1a1a" + ";");
+        titleLabel.setWrapText(true);
+
+        titleRow.getChildren().addAll(iconStack, titleLabel);
+
+        // Message
+        Label messageLabel = new Label(notification.getMessage());
+        messageLabel.setStyle("-fx-font-size: 12; -fx-text-fill: " + "#666" + ";");
+        messageLabel.setWrapText(true);
+        messageLabel.setMaxWidth(330);
+
+        // Timestamp
+        Label timeLabel = new Label(getRelativeTime(notification.getTimestamp()));
+        timeLabel.setStyle("-fx-font-size: 11; -fx-text-fill: " + "#999" + ";");
+
+        item.getChildren().addAll(titleRow, messageLabel, timeLabel);
+        return item;
+    }
+
+    private String getRelativeTime(String timestamp) {
+        try {
+            java.time.LocalDateTime notifTime = java.time.LocalDateTime.parse(timestamp, 
+                java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            java.time.LocalDateTime now = java.time.LocalDateTime.now();
+            
+            long minutes = java.time.Duration.between(notifTime, now).toMinutes();
+            if (minutes < 1) return "Just now";
+            if (minutes < 60) return minutes + " minutes ago";
+            
+            long hours = minutes / 60;
+            if (hours < 24) return hours + " hour" + (hours > 1 ? "s" : "") + " ago";
+            
+            long days = hours / 24;
+            if (days < 7) return days + " day" + (days > 1 ? "s" : "") + " ago";
+            
+            return notifTime.format(java.time.format.DateTimeFormatter.ofPattern("MMM dd, yyyy"));
+        } catch (Exception e) {
+            return timestamp;
+        }
+    }
+
+    private void refreshNotificationDropdown() {
+        if (notificationDropdownContent != null && notificationPopup != null && notificationPopup.isShowing()) {
+            // Recreate the dropdown content with fresh activity data
+            notificationDropdownContent.getChildren().clear();
+            
+            // Rebuild the activity dropdown
+            // Header
+            HBox header = new HBox(10);
+            header.setPadding(new Insets(15));
+            header.setStyle("-fx-border-color: #e5e7eb; -fx-border-width: 0 0 1 0;");
+            header.setAlignment(Pos.CENTER_LEFT);
+
+            Label headerTitle = new Label("Recent Activity");
+            headerTitle.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
+            header.getChildren().add(headerTitle);
+
+            // Scrollable activity list
+            ScrollPane scrollPane = new ScrollPane();
+            scrollPane.setStyle("-fx-background-color: transparent; -fx-background: transparent;");
+            scrollPane.setFitToWidth(true);
+            scrollPane.setPrefHeight(400);
+            scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+
+            VBox activityList = new VBox(0);
+            var activityLogs = DatabaseHelper.getRecentActivity(10);
+
+            if (activityLogs.isEmpty()) {
+                Label emptyLabel = new Label("No recent activity");
+                emptyLabel.setStyle("-fx-text-fill: #999; -fx-font-style: italic; -fx-padding: 30;");
+                activityList.getChildren().add(emptyLabel);
+            } else {
+                for (AuditEntry entry : activityLogs) {
+                    activityList.getChildren().add(createActivityDropdownItem(entry));
+                }
+            }
+
+            scrollPane.setContent(activityList);
+            notificationDropdownContent.getChildren().addAll(header, scrollPane);
+        }
+    }
+
+    private Circle notificationDot;
+
+    private void updateNotificationBadge() {
+        if (notificationDot != null) {
+            int unreadCount = DatabaseHelper.getUnreadNotificationCount();
+            notificationDot.setVisible(unreadCount > 0);
+        }
     }
 
     public static void main(String[] args) {

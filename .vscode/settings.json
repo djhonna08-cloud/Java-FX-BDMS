@@ -1,5 +1,22 @@
 {
     "java.debug.settings.onBuildFailureProceed": true,
     "java.configuration.updateBuildConfiguration": "automatic",
-    "java.compile.nullAnalysis.mode": "automatic"
+    "java.compile.nullAnalysis.mode": "automatic",
+    "maven.executable.path": "C:\\Users\\Razza\\apache-maven-3.9.15\\bin\\mvn.cmd",
+    "java.project.referencedLibraries": [
+        "lib/**/*.jar"
+    ],
+    "java.configuration.maven.userSettings": null,
+    "java.configuration.runtimes": [
+        {
+            "name": "JavaSE-21",
+            "path": "C:\\Program Files\\Microsoft\\jdk-21.0.10",
+            "default": true
+        }
+    ],
+    "java.jdt.ls.java.home": "C:\\Program Files\\Microsoft\\jdk-21.0.10",
+    "java.home": "C:\\Program Files\\Microsoft\\jdk-21.0.10",
+    "java.import.maven.enabled": true,
+    "java.import.gradle.enabled": false,
+    "java.server.launchMode": "Standard"
 }

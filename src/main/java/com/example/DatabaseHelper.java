@@ -23,8 +23,12 @@ public class DatabaseHelper {
         initializeDatabase();
     }
 
+    private static Connection getConnection() throws SQLException {
+        return DriverManager.getConnection(DB_URL, USER, PASS);
+    }
+
     private static void initializeDatabase() {
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              Statement stmt = conn.createStatement()) {
 
             // Create users table
@@ -178,7 +182,7 @@ public class DatabaseHelper {
     public static String authenticate(String username, String password) {
         // Use LOWER() for case-insensitive username matching
         String sql = "SELECT role FROM users WHERE LOWER(username) = ? AND password = ?";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, username.toLowerCase());
             pstmt.setString(2, password);
@@ -273,7 +277,7 @@ public class DatabaseHelper {
             sql = "SELECT COUNT(*) FROM residents WHERE LOWER(first_name) LIKE ? OR LOWER(last_name) LIKE ?";
         }
 
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             
             if (filter != null && !filter.isEmpty()) {
@@ -322,7 +326,7 @@ public class DatabaseHelper {
         sqlBuilder.append(" LIMIT ? OFFSET ?");
         
         String sql = sqlBuilder.toString();
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             
             int paramIndex = 1;
@@ -356,7 +360,7 @@ public class DatabaseHelper {
 
     public static void addResident(Resident resident) {
         String sql = "INSERT INTO residents(first_name, middle_name, last_name, birth_date, gender, address, image_path, role) VALUES(?, ?, ?, ?, ?, ?, ?, ?)";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, resident.getFirstName());
             pstmt.setString(2, resident.getMiddleName());
@@ -375,7 +379,7 @@ public class DatabaseHelper {
 
     public static void updateResident(Resident resident) {
         String sql = "UPDATE residents SET first_name = ?, middle_name = ?, last_name = ?, birth_date = ?, gender = ?, address = ?, image_path = ?, role = ? WHERE id = ?";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, resident.getFirstName());
             pstmt.setString(2, resident.getMiddleName());
@@ -395,7 +399,7 @@ public class DatabaseHelper {
 
     public static void deleteResident(int id) {
         String sql = "DELETE FROM residents WHERE id = ?";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, id);
             pstmt.executeUpdate();
@@ -407,7 +411,7 @@ public class DatabaseHelper {
 
     public static Optional<Resident> getResidentById(int id) {
         String sql = "SELECT * FROM residents WHERE id = ?";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, id);
             ResultSet rs = pstmt.executeQuery();
@@ -433,7 +437,7 @@ public class DatabaseHelper {
     public static Map<String, Integer> getGenderDistribution() {
         Map<String, Integer> distribution = new HashMap<>();
         String sql = "SELECT gender, COUNT(*) as count FROM residents WHERE gender IS NOT NULL GROUP BY gender ORDER BY gender";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
             while (rs.next()) {
@@ -461,7 +465,7 @@ public class DatabaseHelper {
         distribution.put("61+", 0);
 
         String sql = "SELECT birth_date FROM residents WHERE birth_date IS NOT NULL";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
             java.time.LocalDate today = java.time.LocalDate.now();
@@ -499,7 +503,7 @@ public class DatabaseHelper {
 
     public static void addRole(Role role) {
         String sql = "INSERT INTO roles(name, description) VALUES(?, ?)";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, role.getName());
             pstmt.setString(2, role.getDescription());
@@ -512,7 +516,7 @@ public class DatabaseHelper {
 
     public static void updateRole(Role role) {
         String sql = "UPDATE roles SET name = ?, description = ? WHERE id = ?";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, role.getName());
             pstmt.setString(2, role.getDescription());
@@ -526,7 +530,7 @@ public class DatabaseHelper {
 
     public static void deleteRole(int id) {
         String sql = "DELETE FROM roles WHERE id = ?";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, id);
             pstmt.executeUpdate();
@@ -538,7 +542,7 @@ public class DatabaseHelper {
 
     public static Optional<Role> getRoleById(int id) {
         String sql = "SELECT * FROM roles WHERE id = ?";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, id);
             ResultSet rs = pstmt.executeQuery();
@@ -555,7 +559,7 @@ public class DatabaseHelper {
     public static ObservableList<Role> getAllRoles() {
         ObservableList<Role> roles = FXCollections.observableArrayList();
         String sql = "SELECT * FROM roles ORDER BY name ASC";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
             while (rs.next()) {
@@ -572,7 +576,7 @@ public class DatabaseHelper {
 
     public static void logAction(String username, String action, String details, String category) {
         String sql = "INSERT INTO audit_log(timestamp, username, action, details, category) VALUES(?, ?, ?, ?, ?)";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             java.time.LocalDateTime now = java.time.LocalDateTime.now();
             java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -592,7 +596,7 @@ public class DatabaseHelper {
     public static ObservableList<AuditEntry> getAuditLogs() {
         ObservableList<AuditEntry> auditLogs = FXCollections.observableArrayList();
         String sql = "SELECT * FROM audit_log ORDER BY id DESC LIMIT 100";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
             while (rs.next()) {
@@ -615,7 +619,7 @@ public class DatabaseHelper {
     public static ObservableList<AuditEntry> getRecentActivity(int limit) {
         ObservableList<AuditEntry> activity = FXCollections.observableArrayList();
         String sql = "SELECT * FROM audit_log ORDER BY id DESC LIMIT ?";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, limit);
             ResultSet rs = pstmt.executeQuery();
@@ -638,7 +642,7 @@ public class DatabaseHelper {
     public static int createDocumentRequest(DocumentRequest request) {
         String sql = "INSERT INTO document_requests(resident_id, resident_name, document_type, status, request_date, fee, payment_status, purpose, notes) " +
                      "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql, java.sql.Statement.RETURN_GENERATED_KEYS)) {
             java.time.LocalDate today = java.time.LocalDate.now();
             java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd");
@@ -670,7 +674,7 @@ public class DatabaseHelper {
 
     public static void approveDocumentRequest(int requestId, String approvedBy) {
         String sql = "UPDATE document_requests SET status = ?, approval_date = ?, approved_by = ? WHERE id = ?";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             java.time.LocalDate today = java.time.LocalDate.now();
             java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd");
@@ -689,7 +693,7 @@ public class DatabaseHelper {
 
     public static void recordPayment(int requestId) {
         String sql = "UPDATE document_requests SET payment_status = ? WHERE id = ?";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, "PAID");
             pstmt.setInt(2, requestId);
@@ -703,7 +707,7 @@ public class DatabaseHelper {
 
     public static void completeDocumentRequest(int requestId) {
         String sql = "UPDATE document_requests SET status = ? WHERE id = ?";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, "COMPLETED");
             pstmt.setInt(2, requestId);
@@ -718,7 +722,7 @@ public class DatabaseHelper {
     public static ObservableList<DocumentRequest> getAllDocumentRequests() {
         ObservableList<DocumentRequest> requests = FXCollections.observableArrayList();
         String sql = "SELECT * FROM document_requests ORDER BY request_date DESC";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
             while (rs.next()) {
@@ -744,9 +748,24 @@ public class DatabaseHelper {
         return requests;
     }
 
+    public static double getTotalRevenue() {
+        double total = 0.0;
+        String sql = "SELECT SUM(fee) as total FROM document_requests WHERE payment_status = 'PAID'";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                total = rs.getDouble("total");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return total;
+    }
+
     public static Optional<DocumentRequest> getDocumentRequestById(int id) {
         String sql = "SELECT * FROM document_requests WHERE id = ?";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, id);
             ResultSet rs = pstmt.executeQuery();
@@ -778,11 +797,8 @@ public class DatabaseHelper {
     public static int createComplaint(Complaint complaint) {
         String sql = "INSERT INTO complaints(resident_id, resident_name, title, description, status, date_submitted, last_updated, photo_path, admin_notes, assigned_to) " +
                      "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql, java.sql.Statement.RETURN_GENERATED_KEYS)) {
-            
-            System.out.println("Creating complaint: " + complaint.getTitle());
-            
             pstmt.setInt(1, complaint.getResidentId());
             pstmt.setString(2, complaint.getResidentName());
             pstmt.setString(3, complaint.getTitle());
@@ -794,21 +810,15 @@ public class DatabaseHelper {
             pstmt.setString(9, complaint.getAdminNotes() != null ? complaint.getAdminNotes() : "");
             pstmt.setString(10, complaint.getAssignedTo() != null ? complaint.getAssignedTo() : "");
             
-            int result = pstmt.executeUpdate();
-            System.out.println("Insert result: " + result);
-            
+            pstmt.executeUpdate();
             ResultSet rs = pstmt.getGeneratedKeys();
             if (rs.next()) {
                 int complaintId = rs.getInt(1);
-                System.out.println("Complaint created with ID: " + complaintId);
                 logAction("System", "Created complaint: " + complaint.getTitle(), 
                          complaint.getResidentName(), "Complaint");
                 return complaintId;
-            } else {
-                System.out.println("No generated keys returned");
             }
         } catch (SQLException e) {
-            System.err.println("Error creating complaint: " + e.getMessage());
             e.printStackTrace();
         }
         return -1;
@@ -816,7 +826,7 @@ public class DatabaseHelper {
 
     public static void updateComplaintStatus(int complaintId, String status) {
         String sql = "UPDATE complaints SET status = ?, last_updated = ? WHERE id = ?";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             java.time.LocalDateTime now = java.time.LocalDateTime.now();
             java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -835,7 +845,7 @@ public class DatabaseHelper {
 
     public static void updateComplaintNotes(int complaintId, String notes, String assignedTo) {
         String sql = "UPDATE complaints SET admin_notes = ?, assigned_to = ?, last_updated = ? WHERE id = ?";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             java.time.LocalDateTime now = java.time.LocalDateTime.now();
             java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -856,7 +866,7 @@ public class DatabaseHelper {
     public static ObservableList<Complaint> getAllComplaints() {
         ObservableList<Complaint> complaints = FXCollections.observableArrayList();
         String sql = "SELECT * FROM complaints ORDER BY date_submitted DESC";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
             while (rs.next()) {
@@ -883,7 +893,7 @@ public class DatabaseHelper {
 
     public static Optional<Complaint> getComplaintById(int id) {
         String sql = "SELECT * FROM complaints WHERE id = ?";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, id);
             ResultSet rs = pstmt.executeQuery();
@@ -912,7 +922,7 @@ public class DatabaseHelper {
     public static ObservableList<Complaint> getComplaintsByResident(int residentId) {
         ObservableList<Complaint> complaints = FXCollections.observableArrayList();
         String sql = "SELECT * FROM complaints WHERE resident_id = ? ORDER BY date_submitted DESC";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, residentId);
             ResultSet rs = pstmt.executeQuery();
@@ -943,7 +953,7 @@ public class DatabaseHelper {
     public static int createAnnouncement(Announcement announcement) {
         String sql = "INSERT INTO announcements(title, content, type, posted_date, posted_by, status, start_date, end_date, views) " +
                      "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql, java.sql.Statement.RETURN_GENERATED_KEYS)) {
             
             pstmt.setString(1, announcement.getTitle());
@@ -973,7 +983,7 @@ public class DatabaseHelper {
 
     public static void updateAnnouncement(int announcementId, String title, String content, String status, String endDate) {
         String sql = "UPDATE announcements SET title = ?, content = ?, status = ?, end_date = ? WHERE id = ?";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, title);
             pstmt.setString(2, content);
@@ -991,7 +1001,7 @@ public class DatabaseHelper {
 
     public static void deleteAnnouncement(int announcementId) {
         String sql = "DELETE FROM announcements WHERE id = ?";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, announcementId);
             pstmt.executeUpdate();
@@ -1006,7 +1016,7 @@ public class DatabaseHelper {
     public static ObservableList<Announcement> getAllAnnouncements() {
         ObservableList<Announcement> announcements = FXCollections.observableArrayList();
         String sql = "SELECT * FROM announcements ORDER BY posted_date DESC";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
             while (rs.next()) {
@@ -1033,7 +1043,7 @@ public class DatabaseHelper {
     public static ObservableList<Announcement> getAnnouncementsByType(String type) {
         ObservableList<Announcement> announcements = FXCollections.observableArrayList();
         String sql = "SELECT * FROM announcements WHERE type = ? AND status = 'Active' ORDER BY posted_date DESC";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, type);
             ResultSet rs = pstmt.executeQuery();
@@ -1060,7 +1070,7 @@ public class DatabaseHelper {
 
     public static Optional<Announcement> getAnnouncementById(int id) {
         String sql = "SELECT * FROM announcements WHERE id = ?";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+        try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setInt(1, id);
             ResultSet rs = pstmt.executeQuery();
@@ -1089,15 +1099,16 @@ public class DatabaseHelper {
 
     public static Map<String, Double> getDailyCollections() {
         Map<String, Double> collections = new java.util.LinkedHashMap<>();
+        // H2 syntax: Last 30 days instead of 7 to include more recent data
         String sql = "SELECT request_date, SUM(fee) as daily_total FROM document_requests " +
-                     "WHERE payment_status = 'PAID' AND request_date >= DATE_SUB(CURRENT_DATE, INTERVAL 7 DAY) " +
-                     "GROUP BY request_date ORDER BY request_date ASC";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+                     "WHERE payment_status = 'PAID' AND CAST(request_date AS DATE) >= CAST(CURRENT_DATE - 30 AS DATE) " +
+                     "GROUP BY request_date ORDER BY CAST(request_date AS DATE) ASC";
+        try (Connection conn = getConnection();
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
-            // Initialize last 7 days with 0 values
+            // Initialize last 30 days with 0 values
             java.time.LocalDate today = java.time.LocalDate.now();
-            for (int i = 6; i >= 0; i--) {
+            for (int i = 29; i >= 0; i--) {
                 java.time.LocalDate date = today.minusDays(i);
                 String dateStr = date.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd"));
                 collections.put(dateStr, 0.0);
@@ -1113,7 +1124,7 @@ public class DatabaseHelper {
             e.printStackTrace();
             // If query fails, return empty collections for today
             java.time.LocalDate today = java.time.LocalDate.now();
-            for (int i = 6; i >= 0; i--) {
+            for (int i = 29; i >= 0; i--) {
                 java.time.LocalDate date = today.minusDays(i);
                 String dateStr = date.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd"));
                 collections.put(dateStr, 0.0);
@@ -1124,11 +1135,12 @@ public class DatabaseHelper {
 
     public static Map<String, Double> getMonthlyIncome() {
         Map<String, Double> income = new java.util.LinkedHashMap<>();
-        String sql = "SELECT YEAR(request_date) as year, MONTH(request_date) as month, SUM(fee) as monthly_total " +
+        // H2 syntax: Use YEAR() and MONTH() on casted date, avoid reserved keywords in alias
+        String sql = "SELECT YEAR(CAST(request_date AS DATE)) as yr, MONTH(CAST(request_date AS DATE)) as mo, SUM(fee) as monthly_total " +
                      "FROM document_requests " +
-                     "WHERE payment_status = 'PAID' AND request_date >= DATE_SUB(CURRENT_DATE, INTERVAL 12 MONTH) " +
-                     "GROUP BY YEAR(request_date), MONTH(request_date) ORDER BY year ASC, month ASC";
-        try (Connection conn = DriverManager.getConnection(DB_URL, USER, PASS);
+                     "WHERE payment_status = 'PAID' AND CAST(request_date AS DATE) >= CAST(CURRENT_DATE - INTERVAL '12' MONTH AS DATE) " +
+                     "GROUP BY yr, mo ORDER BY yr DESC, mo DESC";
+        try (Connection conn = getConnection();
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
             // Initialize last 12 months with 0 values
@@ -1141,8 +1153,8 @@ public class DatabaseHelper {
             
             // Update with actual data from database
             while (rs.next()) {
-                int year = rs.getInt("year");
-                int month = rs.getInt("month");
+                int year = rs.getInt("yr");
+                int month = rs.getInt("mo");
                 double amount = rs.getDouble("monthly_total");
                 
                 java.time.LocalDate date = java.time.LocalDate.of(year, month, 1);
@@ -1160,5 +1172,243 @@ public class DatabaseHelper {
             }
         }
         return income;
+    }
+
+    // ==================== NOTIFICATION METHODS ====================
+    
+    public static void initializeNotificationsTable() {
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement()) {
+            
+            String createNotifications = "CREATE TABLE IF NOT EXISTS notifications (" +
+                    "id INTEGER PRIMARY KEY AUTO_INCREMENT, " +
+                    "title VARCHAR(200) NOT NULL, " +
+                    "message VARCHAR(1000) NOT NULL, " +
+                    "type VARCHAR(20) NOT NULL, " + // INFO, WARNING, SUCCESS, ERROR
+                    "timestamp VARCHAR(30) NOT NULL, " +
+                    "is_read BOOLEAN DEFAULT FALSE, " +
+                    "action_url VARCHAR(200), " +
+                    "icon VARCHAR(50))";
+            stmt.execute(createNotifications);
+            System.out.println("✓ Notifications table initialized");
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    static {
+        initializeNotificationsTable();
+    }
+
+    public static ObservableList<Notification> getAllNotifications() {
+        ObservableList<Notification> notifications = FXCollections.observableArrayList();
+        String sql = "SELECT * FROM notifications ORDER BY timestamp DESC";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                notifications.add(new Notification(
+                    rs.getInt("id"),
+                    rs.getString("title"),
+                    rs.getString("message"),
+                    rs.getString("type"),
+                    rs.getString("timestamp"),
+                    rs.getBoolean("is_read"),
+                    rs.getString("action_url"),
+                    rs.getString("icon")
+                ));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return notifications;
+    }
+
+    public static ObservableList<Notification> getUnreadNotifications() {
+        ObservableList<Notification> notifications = FXCollections.observableArrayList();
+        String sql = "SELECT * FROM notifications WHERE is_read = FALSE ORDER BY timestamp DESC LIMIT 10";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                notifications.add(new Notification(
+                    rs.getInt("id"),
+                    rs.getString("title"),
+                    rs.getString("message"),
+                    rs.getString("type"),
+                    rs.getString("timestamp"),
+                    rs.getBoolean("is_read"),
+                    rs.getString("action_url"),
+                    rs.getString("icon")
+                ));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return notifications;
+    }
+
+    public static int getUnreadNotificationCount() {
+        String sql = "SELECT COUNT(*) FROM notifications WHERE is_read = FALSE";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                return rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return 0;
+    }
+
+    public static void addNotification(Notification notification) {
+        String sql = "INSERT INTO notifications (title, message, type, timestamp, is_read, action_url, icon) VALUES (?, ?, ?, ?, ?, ?, ?)";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, notification.getTitle());
+            pstmt.setString(2, notification.getMessage());
+            pstmt.setString(3, notification.getType());
+            pstmt.setString(4, notification.getTimestamp());
+            pstmt.setBoolean(5, notification.isRead());
+            pstmt.setString(6, notification.getActionUrl());
+            pstmt.setString(7, notification.getIcon());
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void markNotificationAsRead(int notificationId) {
+        String sql = "UPDATE notifications SET is_read = TRUE WHERE id = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, notificationId);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void markAllNotificationsAsRead() {
+        String sql = "UPDATE notifications SET is_read = TRUE WHERE is_read = FALSE";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement()) {
+            stmt.executeUpdate(sql);
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void deleteNotification(int notificationId) {
+        String sql = "DELETE FROM notifications WHERE id = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, notificationId);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void deleteAllReadNotifications() {
+        String sql = "DELETE FROM notifications WHERE is_read = TRUE";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement()) {
+            stmt.executeUpdate(sql);
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    // Create sample notifications for testing
+    public static void createSampleNotifications() {
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM notifications")) {
+            if (rs.next() && rs.getInt(1) == 0) {
+                System.out.println("Creating sample notifications...");
+                addNotification(new Notification(
+                    "New Document Request",
+                    "Maria Clara requested a Barangay Clearance",
+                    "INFO",
+                    "bell"
+                ));
+                addNotification(new Notification(
+                    "Complaint Submitted",
+                    "New complaint about street lighting in Zone 3",
+                    "WARNING",
+                    "exclamation-triangle"
+                ));
+                addNotification(new Notification(
+                    "Payment Received",
+                    "₱150 payment received for Certificate of Residency",
+                    "SUCCESS",
+                    "check-circle"
+                ));
+                addNotification(new Notification(
+                    "System Backup",
+                    "Database backup completed successfully",
+                    "SUCCESS",
+                    "database"
+                ));
+                addNotification(new Notification(
+                    "Announcement Posted",
+                    "New event: Barangay Fiesta 2026 announced",
+                    "INFO",
+                    "bullhorn"
+                ));
+                System.out.println("✓ Sample notifications created");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    // Backup database
+    public static boolean backupDatabase(String backupPath) {
+        String sql = "BACKUP TO '" + backupPath + "'";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement()) {
+            stmt.execute(sql);
+            logAction("System", "Database Backup", "Backup created at: " + backupPath, "System");
+            return true;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    // Get database size
+    public static long getDatabaseSize() {
+        try {
+            java.io.File dbFile = new java.io.File(System.getProperty("user.home") + "/bdms_v2.mv.db");
+            if (dbFile.exists()) {
+                return dbFile.length();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return 0;
+    }
+
+    // Get table record counts
+    public static Map<String, Integer> getTableCounts() {
+        Map<String, Integer> counts = new HashMap<>();
+        String[] tables = {"residents", "document_requests", "complaints", "announcements", "users", "audit_log", "notifications"};
+        
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement()) {
+            for (String table : tables) {
+                try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM " + table)) {
+                    if (rs.next()) {
+                        counts.put(table, rs.getInt(1));
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return counts;
     }
 }
