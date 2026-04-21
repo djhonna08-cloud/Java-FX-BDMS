@@ -6,6 +6,7 @@ import javafx.collections.ObservableList;
 import java.util.HashMap;
 import java.util.Optional;
 import java.util.Map;
+import java.io.File;
 
 public class DatabaseHelper {
     // Changed DB name to ensure fresh schema creation and added AUTO_SERVER for better locking handling
@@ -130,12 +131,65 @@ public class DatabaseHelper {
                 // Column probably already exists; ignore
             }
 
+            // Add new columns for extended resident information (professor's CSV format)
+            try {
+                stmt.execute("ALTER TABLE residents ADD COLUMN IF NOT EXISTS family_id INTEGER");
+            } catch (SQLException ignored) {
+                // Column probably already exists; ignore
+            }
+
+            try {
+                stmt.execute("ALTER TABLE residents ADD COLUMN IF NOT EXISTS house_unit VARCHAR(20)");
+            } catch (SQLException ignored) {
+                // Column probably already exists; ignore
+            }
+
+            try {
+                stmt.execute("ALTER TABLE residents ADD COLUMN IF NOT EXISTS street VARCHAR(200)");
+            } catch (SQLException ignored) {
+                // Column probably already exists; ignore
+            }
+
+            try {
+                stmt.execute("ALTER TABLE residents ADD COLUMN IF NOT EXISTS subdivision VARCHAR(200)");
+            } catch (SQLException ignored) {
+                // Column probably already exists; ignore
+            }
+
+            try {
+                stmt.execute("ALTER TABLE residents ADD COLUMN IF NOT EXISTS gate_color VARCHAR(50)");
+            } catch (SQLException ignored) {
+                // Column probably already exists; ignore
+            }
+
+            try {
+                stmt.execute("ALTER TABLE residents ADD COLUMN IF NOT EXISTS vaccination_count INTEGER DEFAULT 0");
+            } catch (SQLException ignored) {
+                // Column probably already exists; ignore
+            }
+
+            // Create index for family queries
+            try {
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_residents_family_id ON residents(family_id)");
+            } catch (SQLException ignored) {
+                // Index probably already exists; ignore
+            }
+
             // Create roles table for managing custom roles
             String createRoles = "CREATE TABLE IF NOT EXISTS roles (" +
                     "id INTEGER PRIMARY KEY AUTO_INCREMENT, " +
                     "name VARCHAR(100) UNIQUE NOT NULL, " +
                     "description VARCHAR(500))";
             stmt.execute(createRoles);
+
+            // Create role_permissions table for dynamic permission management
+            String createRolePermissions = "CREATE TABLE IF NOT EXISTS role_permissions (" +
+                    "id INTEGER PRIMARY KEY AUTO_INCREMENT, " +
+                    "role_name VARCHAR(100) NOT NULL, " +
+                    "module_name VARCHAR(100) NOT NULL, " +
+                    "permission_level VARCHAR(20) NOT NULL, " +
+                    "UNIQUE(role_name, module_name))";
+            stmt.execute(createRolePermissions);
 
             // Initialize default roles
             try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM roles")) {
@@ -161,24 +215,36 @@ public class DatabaseHelper {
                 if (rs.next() && rs.getInt(1) == 0) {
                     System.out.println("Users table is empty. Inserting default users...");
                     String[] users = {
-                        "INSERT INTO users (username, password, role) VALUES ('superadmin', 'pass', 'Super Admin')",
-                        "INSERT INTO users (username, password, role) VALUES ('owner', 'pass', 'Owner')",
-                        "INSERT INTO users (username, password, role) VALUES ('secretary', 'pass', 'Secretary')",
-                        "INSERT INTO users (username, password, role) VALUES ('treasurer', 'pass', 'Treasurer')",
-                        "INSERT INTO users (username, password, role) VALUES ('captain', 'pass', 'Captain')",
-                        "INSERT INTO users (username, password, role) VALUES ('resident', 'pass', 'Resident')"
+                        "INSERT INTO users (username, password, role) VALUES ('superadmin', 'admin123', 'Super Admin')",
+                        "INSERT INTO users (username, password, role) VALUES ('owner', 'owner123', 'Owner')",
+                        "INSERT INTO users (username, password, role) VALUES ('captain', 'captain123', 'Barangay Captain')",
+                        "INSERT INTO users (username, password, role) VALUES ('secretary', 'secretary123', 'Barangay Secretary')",
+                        "INSERT INTO users (username, password, role) VALUES ('treasurer', 'treasurer123', 'Barangay Treasurer')",
+                        "INSERT INTO users (username, password, role) VALUES ('kagawad', 'kagawad123', 'Kagawads')",
+                        "INSERT INTO users (username, password, role) VALUES ('healthworker', 'health123', 'Barangay Health Workers')",
+                        "INSERT INTO users (username, password, role) VALUES ('tanod', 'tanod123', 'Barangay Tanods')"
                     };
                     for (String insert : users) {
                         stmt.execute(insert);
                     }
-                    System.out.println("Default users inserted.");
+                    System.out.println("✓ Default users inserted for all roles.");
                 }
             }
+            
+            // Initialize default permissions in database
+            initializeDefaultPermissions();
+            
         } catch (SQLException e) {
             e.printStackTrace();
         }
     }
 
+    /**
+     * Authenticate a user with username and password
+     * @param username The username (case-insensitive)
+     * @param password The password
+     * @return The user's role if authentication succeeds, null otherwise
+     */
     public static String authenticate(String username, String password) {
         // Use LOWER() for case-insensitive username matching
         String sql = "SELECT role FROM users WHERE LOWER(username) = ? AND password = ?";
@@ -196,79 +262,285 @@ public class DatabaseHelper {
         return null;
     }
 
+    /**
+     * Get role-based permissions for a user
+     * @param role The user's role
+     * @return Map of permission categories to access levels
+     */
     public static Map<String, String> getPermissions(String role) {
         Map<String, String> permissions = new HashMap<>();
         switch (role) {
             case "Super Admin":
+                permissions.put("Analytics & Overview", "Full Access");
+                permissions.put("User & Access", "Full Access");
                 permissions.put("Resident Data", "Full Access");
-                permissions.put("Financials", "Full Access");
-                permissions.put("Blotter/Legal", "Full Access");
-                permissions.put("System Settings", "Full Access");
+                permissions.put("Certificates & Clearances", "Full Access");
+                permissions.put("Complaints & Incidents", "Full Access");
+                permissions.put("Announcements", "Full Access");
+                permissions.put("Financial Reports", "Full Access");
+                permissions.put("Security Features", "Full Access");
+                permissions.put("System Config", "Full Access");
+                permissions.put("Maintenance", "Full Access");
                 break;
             case "Owner":
-                permissions.put("Resident Data", "Secretary");
-                permissions.put("Financials", "Manage");
-                permissions.put("Blotter/Legal", "View Only");
-                permissions.put("System Settings", "Manage");
+                permissions.put("Analytics & Overview", "Full Access");
+                permissions.put("User & Access", "Manage");
+                permissions.put("Resident Data", "Full Access");
+                permissions.put("Certificates & Clearances", "Full Access");
+                permissions.put("Complaints & Incidents", "Manage");
+                permissions.put("Announcements", "Manage");
+                permissions.put("Financial Reports", "Manage");
+                permissions.put("Security Features", "Manage");
+                permissions.put("System Config", "Manage");
+                permissions.put("Maintenance", "View Only");
                 break;
             case "Secretary":
+                permissions.put("Analytics & Overview", "View Only");
+                permissions.put("User & Access", "None");
                 permissions.put("Resident Data", "Manage");
-                permissions.put("Financials", "View Only");
-                permissions.put("Blotter/Legal", "Manage");
-                permissions.put("System Settings", "None");
+                permissions.put("Certificates & Clearances", "Manage");
+                permissions.put("Complaints & Incidents", "Manage");
+                permissions.put("Announcements", "Manage");
+                permissions.put("Financial Reports", "View Only");
+                permissions.put("Security Features", "None");
+                permissions.put("System Config", "None");
+                permissions.put("Maintenance", "None");
                 break;
             case "Treasurer":
+                permissions.put("Analytics & Overview", "View Only");
+                permissions.put("User & Access", "None");
                 permissions.put("Resident Data", "View Only");
-                permissions.put("Financials", "Manage");
-                permissions.put("Blotter/Legal", "None");
-                permissions.put("System Settings", "None");
+                permissions.put("Certificates & Clearances", "View Only");
+                permissions.put("Complaints & Incidents", "None");
+                permissions.put("Announcements", "View Only");
+                permissions.put("Financial Reports", "Manage");
+                permissions.put("Security Features", "None");
+                permissions.put("System Config", "None");
+                permissions.put("Maintenance", "None");
                 break;
             case "Captain":
+                permissions.put("Analytics & Overview", "View Only");
+                permissions.put("User & Access", "None");
                 permissions.put("Resident Data", "View Only");
-                permissions.put("Financials", "View Only");
-                permissions.put("Blotter/Legal", "View Only");
-                permissions.put("System Settings", "None");
+                permissions.put("Certificates & Clearances", "View Only");
+                permissions.put("Complaints & Incidents", "View Only");
+                permissions.put("Announcements", "View Only");
+                permissions.put("Financial Reports", "View Only");
+                permissions.put("Security Features", "None");
+                permissions.put("System Config", "None");
+                permissions.put("Maintenance", "None");
                 break;
             case "Barangay Captain":
+                permissions.put("Analytics & Overview", "Full Access");
+                permissions.put("User & Access", "Full Access");
                 permissions.put("Resident Data", "Full Access");
-                permissions.put("Financials", "Full Access");
-                permissions.put("Blotter/Legal", "Full Access");
-                permissions.put("System Settings", "Full Access");
+                permissions.put("Certificates & Clearances", "Full Access");
+                permissions.put("Complaints & Incidents", "Full Access");
+                permissions.put("Announcements", "Full Access");
+                permissions.put("Financial Reports", "Full Access");
+                permissions.put("Security Features", "Full Access");
+                permissions.put("System Config", "Full Access");
+                permissions.put("Maintenance", "Full Access");
                 break;
             case "Barangay Secretary":
+                permissions.put("Analytics & Overview", "View Only");
+                permissions.put("User & Access", "None");
                 permissions.put("Resident Data", "Manage");
-                permissions.put("Financials", "View Only");
-                permissions.put("Blotter/Legal", "Manage");
-                permissions.put("System Settings", "None");
+                permissions.put("Certificates & Clearances", "Manage");
+                permissions.put("Complaints & Incidents", "Manage");
+                permissions.put("Announcements", "Manage");
+                permissions.put("Financial Reports", "View Only");
+                permissions.put("Security Features", "None");
+                permissions.put("System Config", "None");
+                permissions.put("Maintenance", "None");
                 break;
             case "Barangay Treasurer":
+                permissions.put("Analytics & Overview", "View Only");
+                permissions.put("User & Access", "None");
                 permissions.put("Resident Data", "View Only");
-                permissions.put("Financials", "Manage");
-                permissions.put("Blotter/Legal", "None");
-                permissions.put("System Settings", "None");
+                permissions.put("Certificates & Clearances", "View Only");
+                permissions.put("Complaints & Incidents", "None");
+                permissions.put("Announcements", "View Only");
+                permissions.put("Financial Reports", "Manage");
+                permissions.put("Security Features", "None");
+                permissions.put("System Config", "None");
+                permissions.put("Maintenance", "None");
                 break;
             case "Kagawads":
+                permissions.put("Analytics & Overview", "View Only");
+                permissions.put("User & Access", "None");
                 permissions.put("Resident Data", "View Only");
-                permissions.put("Financials", "View Only");
-                permissions.put("Blotter/Legal", "View Only");
-                permissions.put("System Settings", "None");
+                permissions.put("Certificates & Clearances", "View Only");
+                permissions.put("Complaints & Incidents", "View Only");
+                permissions.put("Announcements", "View Only");
+                permissions.put("Financial Reports", "View Only");
+                permissions.put("Security Features", "None");
+                permissions.put("System Config", "None");
+                permissions.put("Maintenance", "None");
                 break;
             case "Barangay Health Workers":
+                permissions.put("Analytics & Overview", "None");
+                permissions.put("User & Access", "None");
                 permissions.put("Resident Data", "Manage");
-                permissions.put("Financials", "None");
-                permissions.put("Blotter/Legal", "None");
-                permissions.put("System Settings", "None");
+                permissions.put("Certificates & Clearances", "None");
+                permissions.put("Complaints & Incidents", "None");
+                permissions.put("Announcements", "View Only");
+                permissions.put("Financial Reports", "None");
+                permissions.put("Security Features", "None");
+                permissions.put("System Config", "None");
+                permissions.put("Maintenance", "None");
+                break;
+            case "Health Worker":
+                permissions.put("Analytics & Overview", "None");
+                permissions.put("User & Access", "None");
+                permissions.put("Resident Data", "Manage");
+                permissions.put("Certificates & Clearances", "None");
+                permissions.put("Complaints & Incidents", "None");
+                permissions.put("Announcements", "View Only");
+                permissions.put("Financial Reports", "None");
+                permissions.put("Security Features", "None");
+                permissions.put("System Config", "None");
+                permissions.put("Maintenance", "None");
                 break;
             case "Barangay Tanods":
+                permissions.put("Analytics & Overview", "None");
+                permissions.put("User & Access", "None");
                 permissions.put("Resident Data", "View Only");
-                permissions.put("Financials", "None");
-                permissions.put("Blotter/Legal", "Manage");
-                permissions.put("System Settings", "None");
+                permissions.put("Certificates & Clearances", "None");
+                permissions.put("Complaints & Incidents", "Manage");
+                permissions.put("Announcements", "View Only");
+                permissions.put("Financial Reports", "None");
+                permissions.put("Security Features", "None");
+                permissions.put("System Config", "None");
+                permissions.put("Maintenance", "None");
                 break;
+            case "Tanod":
+                permissions.put("Analytics & Overview", "None");
+                permissions.put("User & Access", "None");
+                permissions.put("Resident Data", "View Only");
+                permissions.put("Certificates & Clearances", "None");
+                permissions.put("Complaints & Incidents", "Manage");
+                permissions.put("Announcements", "View Only");
+                permissions.put("Financial Reports", "None");
+                permissions.put("Security Features", "None");
+                permissions.put("System Config", "None");
+                permissions.put("Maintenance", "None");
+                break;
+            case "Resident":
+                // Basic resident role - minimal permissions
+                permissions.put("Analytics & Overview", "None");
+                permissions.put("User & Access", "None");
+                permissions.put("Resident Data", "View Only");
+                permissions.put("Certificates & Clearances", "View Only");
+                permissions.put("Complaints & Incidents", "View Only");
+                permissions.put("Announcements", "View Only");
+                permissions.put("Financial Reports", "None");
+                permissions.put("Security Features", "None");
+                permissions.put("System Config", "None");
+                permissions.put("Maintenance", "None");
+                break;
+            default:
+                // Default minimal permissions for unknown roles
+                permissions.put("Analytics & Overview", "None");
+                permissions.put("User & Access", "None");
+                permissions.put("Resident Data", "View Only");
+                permissions.put("Certificates & Clearances", "None");
+                permissions.put("Complaints & Incidents", "None");
+                permissions.put("Announcements", "View Only");
+                permissions.put("Financial Reports", "None");
+                permissions.put("Security Features", "None");
+                permissions.put("System Config", "None");
+                permissions.put("Maintenance", "None");
+                break;
+        }
+        
+        // Try to load permissions from database first
+        Map<String, String> dbPermissions = getPermissionsFromDatabase(role);
+        if (!dbPermissions.isEmpty()) {
+            return dbPermissions;
+        }
+        
+        return permissions;
+    }
+
+    /**
+     * Get permissions from database for a role
+     * @param role The role name
+     * @return Map of module to permission level from database
+     */
+    private static Map<String, String> getPermissionsFromDatabase(String role) {
+        Map<String, String> permissions = new HashMap<>();
+        String sql = "SELECT module_name, permission_level FROM role_permissions WHERE role_name = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, role);
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                permissions.put(rs.getString("module_name"), rs.getString("permission_level"));
+            }
+        } catch (SQLException e) {
+            // Table might not exist yet or other error, return empty map
         }
         return permissions;
     }
 
+    /**
+     * Save permission for a role and module
+     * @param roleName The role name
+     * @param moduleName The module name
+     * @param permissionLevel The permission level (None, View Only, Manage, Full Access)
+     */
+    public static void savePermission(String roleName, String moduleName, String permissionLevel) {
+        String sql = "MERGE INTO role_permissions (role_name, module_name, permission_level) " +
+                     "KEY(role_name, module_name) VALUES (?, ?, ?)";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, roleName);
+            pstmt.setString(2, moduleName);
+            pstmt.setString(3, permissionLevel);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Initialize default permissions for all roles in the database
+     * This should be called once to populate the role_permissions table
+     */
+    public static void initializeDefaultPermissions() {
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement()) {
+            
+            // Check if permissions are already initialized
+            ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM role_permissions");
+            if (rs.next() && rs.getInt(1) > 0) {
+                return; // Already initialized
+            }
+            
+            // Get all roles and their default permissions
+            String[] roles = {"Super Admin", "Owner", "Barangay Captain", "Barangay Secretary", 
+                            "Barangay Treasurer", "Kagawads", "Health Worker", "Tanod", "Resident"};
+            
+            for (String role : roles) {
+                Map<String, String> permissions = getPermissions(role);
+                for (Map.Entry<String, String> entry : permissions.entrySet()) {
+                    savePermission(role, entry.getKey(), entry.getValue());
+                }
+            }
+            
+            System.out.println("✓ Default permissions initialized in database");
+            
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Get total count of residents, optionally filtered by name
+     * @param filter Optional search filter for first_name or last_name (case-insensitive)
+     * @return Count of matching residents, 0 if none found or on error
+     */
     public static int getResidentCount(String filter) {
         String sql;
         if (filter == null || filter.isEmpty()) {
@@ -296,6 +568,15 @@ public class DatabaseHelper {
         return 0;
     }
 
+    /**
+     * Get paginated list of residents with optional filtering and sorting
+     * @param filter Optional search filter for first_name or last_name (case-insensitive)
+     * @param pageIndex Zero-based page index
+     * @param pageSize Number of records per page
+     * @param sortField Column to sort by (validated against whitelist)
+     * @param sortOrder Sort direction: "ASC" or "DESC"
+     * @return Observable list of residents, empty list if none found or on error
+     */
     public static ObservableList<Resident> getResidents(String filter, int pageIndex, int pageSize, String sortField, String sortOrder) {
         ObservableList<Resident> residents = FXCollections.observableArrayList();
         
@@ -347,7 +628,13 @@ public class DatabaseHelper {
                         rs.getString("last_name"),
                         rs.getString("birth_date"),
                         rs.getString("gender"),
-                        rs.getString("address"));
+                        rs.getString("address"),
+                        rs.getObject("family_id", Integer.class),
+                        rs.getString("house_unit"),
+                        rs.getString("street"),
+                        rs.getString("subdivision"),
+                        rs.getString("gate_color"),
+                        rs.getObject("vaccination_count", Integer.class));
                 resident.setImagePath(rs.getString("image_path"));
                 resident.setRole(rs.getString("role"));
                 residents.add(resident);
@@ -358,8 +645,14 @@ public class DatabaseHelper {
         return residents;
     }
 
+    /**
+     * Add a new resident to the database
+     * @param resident The resident object to add
+     */
     public static void addResident(Resident resident) {
-        String sql = "INSERT INTO residents(first_name, middle_name, last_name, birth_date, gender, address, image_path, role) VALUES(?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO residents(first_name, middle_name, last_name, birth_date, gender, address, image_path, role, " +
+                    "family_id, house_unit, street, subdivision, gate_color, vaccination_count) " +
+                    "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, resident.getFirstName());
@@ -370,6 +663,25 @@ public class DatabaseHelper {
             pstmt.setString(6, resident.getAddress());
             pstmt.setString(7, resident.getImagePath());
             pstmt.setString(8, resident.getRole());
+            
+            // Extended fields
+            Integer familyId = resident.getFamilyId();
+            if (familyId != null && familyId > 0) {
+                pstmt.setInt(9, familyId);
+            } else {
+                pstmt.setNull(9, java.sql.Types.INTEGER);
+            }
+            pstmt.setString(10, resident.getHouseUnit());
+            pstmt.setString(11, resident.getStreet());
+            pstmt.setString(12, resident.getSubdivision());
+            pstmt.setString(13, resident.getGateColor());
+            Integer vacCount = resident.getVaccinationCount();
+            if (vacCount != null && vacCount > 0) {
+                pstmt.setInt(14, vacCount);
+            } else {
+                pstmt.setInt(14, 0);
+            }
+            
             pstmt.executeUpdate();
             logAction("System", "Created new resident: " + resident.getFirstName() + " " + resident.getLastName(), "Resident " + resident.getLastName() + ", " + resident.getFirstName(), "Resident");
         } catch (SQLException e) {
@@ -377,8 +689,178 @@ public class DatabaseHelper {
         }
     }
 
+    /**
+     * Bulk import residents from CSV file
+     * CSV format: first_name,middle_name,last_name,birth_date,gender,address,role
+     * @param csvFilePath Path to the CSV file
+     * @return ImportResult containing success count, error count, and error messages
+     */
+    public static ImportResult bulkImportResidentsFromCSV(String csvFilePath) {
+        int successCount = 0;
+        int errorCount = 0;
+        java.util.List<String> errors = new java.util.ArrayList<>();
+        String defaultImagePath = getDefaultResidentImagePath();
+        
+        String sql = "INSERT INTO residents(first_name, middle_name, last_name, birth_date, gender, address, image_path, role) VALUES(?, ?, ?, ?, ?, ?, ?, ?)";
+        
+        try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(csvFilePath));
+             Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            
+            String line;
+            int lineNumber = 0;
+            boolean isFirstLine = true;
+            
+            while ((line = br.readLine()) != null) {
+                lineNumber++;
+                
+                // Skip header line
+                if (isFirstLine) {
+                    isFirstLine = false;
+                    continue;
+                }
+                
+                // Skip empty lines
+                if (line.trim().isEmpty()) {
+                    continue;
+                }
+                
+                try {
+                    // Parse CSV line (handles quoted fields with commas)
+                    String[] values = parseCSVLine(line);
+                    
+                    if (values.length < 7) {
+                        errors.add("Line " + lineNumber + ": Insufficient columns (expected 7, got " + values.length + ")");
+                        errorCount++;
+                        continue;
+                    }
+                    
+                    String firstName = values[0].trim();
+                    String middleName = values[1].trim();
+                    String lastName = values[2].trim();
+                    String birthDate = values[3].trim();
+                    String gender = values[4].trim();
+                    String address = values[5].trim();
+                    String role = values[6].trim();
+                    
+                    // Validate required fields
+                    if (firstName.isEmpty() || lastName.isEmpty()) {
+                        errors.add("Line " + lineNumber + ": First name and last name are required");
+                        errorCount++;
+                        continue;
+                    }
+                    
+                    // Validate date format (yyyy-MM-dd)
+                    if (!birthDate.isEmpty() && !birthDate.matches("\\d{4}-\\d{2}-\\d{2}")) {
+                        errors.add("Line " + lineNumber + ": Invalid date format for '" + birthDate + "' (expected yyyy-MM-dd)");
+                        errorCount++;
+                        continue;
+                    }
+                    
+                    // Insert resident
+                    pstmt.setString(1, firstName);
+                    pstmt.setString(2, middleName.isEmpty() ? null : middleName);
+                    pstmt.setString(3, lastName);
+                    pstmt.setString(4, birthDate.isEmpty() ? null : birthDate);
+                    pstmt.setString(5, gender.isEmpty() ? null : gender);
+                    pstmt.setString(6, address.isEmpty() ? null : address);
+                    pstmt.setString(7, defaultImagePath);
+                    pstmt.setString(8, role.isEmpty() ? "Resident" : role);
+                    pstmt.executeUpdate();
+                    
+                    successCount++;
+                    
+                } catch (SQLException e) {
+                    errors.add("Line " + lineNumber + ": Database error - " + e.getMessage());
+                    errorCount++;
+                } catch (Exception e) {
+                    errors.add("Line " + lineNumber + ": Parse error - " + e.getMessage());
+                    errorCount++;
+                }
+            }
+            
+            // Log the bulk import action
+            logAction("System", "Bulk imported residents from CSV", 
+                     "Success: " + successCount + ", Errors: " + errorCount, "Resident");
+            
+        } catch (java.io.IOException e) {
+            errors.add("File error: " + e.getMessage());
+            errorCount++;
+        } catch (SQLException e) {
+            errors.add("Database connection error: " + e.getMessage());
+            errorCount++;
+        }
+        
+        return new ImportResult(successCount, errorCount, errors);
+    }
+    
+    /**
+     * Parse a CSV line handling quoted fields with commas
+     */
+    private static String[] parseCSVLine(String line) {
+        java.util.List<String> result = new java.util.ArrayList<>();
+        boolean inQuotes = false;
+        StringBuilder current = new StringBuilder();
+        
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            
+            if (c == '"') {
+                inQuotes = !inQuotes;
+            } else if (c == ',' && !inQuotes) {
+                result.add(current.toString());
+                current = new StringBuilder();
+            } else {
+                current.append(c);
+            }
+        }
+        result.add(current.toString());
+        
+        return result.toArray(new String[0]);
+    }
+    
+    /**
+     * Get the default resident image path
+     */
+    public static String getDefaultResidentImagePath() {
+        try {
+            File defaultImage = new File("src/assets/defaultresident.jpg");
+            if (defaultImage.exists()) {
+                return defaultImage.getAbsolutePath();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return "";
+    }
+    
+    /**
+     * Result class for bulk import operations
+     */
+    public static class ImportResult {
+        private final int successCount;
+        private final int errorCount;
+        private final java.util.List<String> errors;
+        
+        public ImportResult(int successCount, int errorCount, java.util.List<String> errors) {
+            this.successCount = successCount;
+            this.errorCount = errorCount;
+            this.errors = errors;
+        }
+        
+        public int getSuccessCount() { return successCount; }
+        public int getErrorCount() { return errorCount; }
+        public java.util.List<String> getErrors() { return errors; }
+        public boolean hasErrors() { return errorCount > 0; }
+    }
+
+    /**
+     * Update an existing resident's information
+     * @param resident The resident object with updated information
+     */
     public static void updateResident(Resident resident) {
-        String sql = "UPDATE residents SET first_name = ?, middle_name = ?, last_name = ?, birth_date = ?, gender = ?, address = ?, image_path = ?, role = ? WHERE id = ?";
+        String sql = "UPDATE residents SET first_name = ?, middle_name = ?, last_name = ?, birth_date = ?, gender = ?, address = ?, image_path = ?, role = ?, " +
+                    "family_id = ?, house_unit = ?, street = ?, subdivision = ?, gate_color = ?, vaccination_count = ? WHERE id = ?";
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, resident.getFirstName());
@@ -389,7 +871,25 @@ public class DatabaseHelper {
             pstmt.setString(6, resident.getAddress());
             pstmt.setString(7, resident.getImagePath());
             pstmt.setString(8, resident.getRole());
-            pstmt.setInt(9, resident.getId());
+            
+            // Extended fields
+            Integer familyId = resident.getFamilyId();
+            if (familyId != null && familyId > 0) {
+                pstmt.setInt(9, familyId);
+            } else {
+                pstmt.setNull(9, java.sql.Types.INTEGER);
+            }
+            pstmt.setString(10, resident.getHouseUnit());
+            pstmt.setString(11, resident.getStreet());
+            pstmt.setString(12, resident.getSubdivision());
+            pstmt.setString(13, resident.getGateColor());
+            Integer vacCount = resident.getVaccinationCount();
+            if (vacCount != null && vacCount > 0) {
+                pstmt.setInt(14, vacCount);
+            } else {
+                pstmt.setInt(14, 0);
+            }
+            pstmt.setInt(15, resident.getId());
             pstmt.executeUpdate();
             logAction("System", "Updated resident information: " + resident.getFirstName() + " " + resident.getLastName(), "Resident " + resident.getLastName() + ", " + resident.getFirstName(), "Resident");
         } catch (SQLException e) {
@@ -397,6 +897,10 @@ public class DatabaseHelper {
         }
     }
 
+    /**
+     * Delete a resident from the database
+     * @param id The resident ID to delete
+     */
     public static void deleteResident(int id) {
         String sql = "DELETE FROM residents WHERE id = ?";
         try (Connection conn = getConnection();
@@ -409,6 +913,11 @@ public class DatabaseHelper {
         }
     }
 
+    /**
+     * Get a resident by ID
+     * @param id The resident ID
+     * @return Optional containing the resident if found, empty otherwise
+     */
     public static Optional<Resident> getResidentById(int id) {
         String sql = "SELECT * FROM residents WHERE id = ?";
         try (Connection conn = getConnection();
@@ -423,7 +932,13 @@ public class DatabaseHelper {
                         rs.getString("last_name"),
                         rs.getString("birth_date"),
                         rs.getString("gender"),
-                        rs.getString("address"));
+                        rs.getString("address"),
+                        rs.getObject("family_id", Integer.class),
+                        rs.getString("house_unit"),
+                        rs.getString("street"),
+                        rs.getString("subdivision"),
+                        rs.getString("gate_color"),
+                        rs.getObject("vaccination_count", Integer.class));
                 resident.setImagePath(rs.getString("image_path"));
                 resident.setRole(rs.getString("role"));
                 return Optional.of(resident);
@@ -748,6 +1263,10 @@ public class DatabaseHelper {
         return requests;
     }
 
+    /**
+     * Get total revenue from paid document requests
+     * @return Total revenue amount, 0.0 if no paid requests or on error
+     */
     public static double getTotalRevenue() {
         double total = 0.0;
         String sql = "SELECT SUM(fee) as total FROM document_requests WHERE payment_status = 'PAID'";
@@ -761,6 +1280,121 @@ public class DatabaseHelper {
             e.printStackTrace();
         }
         return total;
+    }
+
+    /**
+     * Get count of pending document requests (clearances/certificates)
+     * Used by: Analytics & Overview dashboard stat card
+     */
+    public static int getPendingClearancesCount() {
+        int count = 0;
+        String sql = "SELECT COUNT(*) FROM document_requests WHERE status = 'PENDING'";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                count = rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return count;
+    }
+
+    /**
+     * Get count of active complaints/cases
+     * Used by: Analytics & Overview dashboard stat card
+     * Status values: 'Pending' and 'Ongoing' are considered active
+     */
+    public static int getActiveCasesCount() {
+        int count = 0;
+        String sql = "SELECT COUNT(*) FROM complaints WHERE status IN ('Pending', 'Ongoing')";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                count = rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return count;
+    }
+
+    /**
+     * Get count of paid document requests
+     * Optional: For additional dashboard metrics
+     */
+    public static int getPaidDocumentsCount() {
+        int count = 0;
+        String sql = "SELECT COUNT(*) FROM document_requests WHERE payment_status = 'PAID'";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                count = rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return count;
+    }
+
+    /**
+     * Get count of approved document requests
+     * Optional: For additional dashboard metrics
+     */
+    public static int getApprovedDocumentsCount() {
+        int count = 0;
+        String sql = "SELECT COUNT(*) FROM document_requests WHERE status = 'APPROVED'";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                count = rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return count;
+    }
+
+    /**
+     * Get count of completed document requests
+     * Optional: For additional dashboard metrics
+     */
+    public static int getCompletedDocumentsCount() {
+        int count = 0;
+        String sql = "SELECT COUNT(*) FROM document_requests WHERE status = 'COMPLETED'";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                count = rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return count;
+    }
+
+    /**
+     * Get count of resolved complaints
+     * Optional: For additional dashboard metrics
+     */
+    public static int getResolvedComplaintsCount() {
+        int count = 0;
+        String sql = "SELECT COUNT(*) FROM complaints WHERE status = 'Resolved'";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                count = rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return count;
     }
 
     public static Optional<DocumentRequest> getDocumentRequestById(int id) {
@@ -1175,6 +1809,123 @@ public class DatabaseHelper {
     }
 
     // ==================== NOTIFICATION METHODS ====================
+
+    /**
+     * Get revenue breakdown by document type
+     * @return Map of document type to total revenue
+     */
+    public static Map<String, Double> getRevenueByDocumentType() {
+        Map<String, Double> revenue = new java.util.LinkedHashMap<>();
+        String sql = "SELECT document_type, SUM(fee) as total_revenue FROM document_requests " +
+                     "WHERE payment_status = 'PAID' " +
+                     "GROUP BY document_type ORDER BY total_revenue DESC";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                String docType = rs.getString("document_type");
+                double amount = rs.getDouble("total_revenue");
+                revenue.put(docType, amount);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return revenue;
+    }
+
+    /**
+     * Get year-to-date financial summary
+     * @return Map with YTD statistics
+     */
+    public static Map<String, Object> getYearToDateSummary() {
+        Map<String, Object> summary = new java.util.LinkedHashMap<>();
+        String sql = "SELECT " +
+                     "COUNT(*) as total_transactions, " +
+                     "SUM(CASE WHEN payment_status = 'PAID' THEN fee ELSE 0 END) as total_revenue, " +
+                     "SUM(CASE WHEN payment_status = 'PENDING' THEN fee ELSE 0 END) as pending_revenue, " +
+                     "COUNT(CASE WHEN payment_status = 'PAID' THEN 1 END) as paid_count, " +
+                     "COUNT(CASE WHEN payment_status = 'PENDING' THEN 1 END) as pending_count " +
+                     "FROM document_requests " +
+                     "WHERE YEAR(CAST(request_date AS DATE)) = YEAR(CURRENT_DATE)";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                summary.put("total_transactions", rs.getInt("total_transactions"));
+                summary.put("total_revenue", rs.getDouble("total_revenue"));
+                summary.put("pending_revenue", rs.getDouble("pending_revenue"));
+                summary.put("paid_count", rs.getInt("paid_count"));
+                summary.put("pending_count", rs.getInt("pending_count"));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            summary.put("total_transactions", 0);
+            summary.put("total_revenue", 0.0);
+            summary.put("pending_revenue", 0.0);
+            summary.put("paid_count", 0);
+            summary.put("pending_count", 0);
+        }
+        return summary;
+    }
+
+    /**
+     * Get top revenue generating days
+     * @param limit Number of top days to return
+     * @return Map of date to revenue
+     */
+    public static Map<String, Double> getTopRevenueDays(int limit) {
+        Map<String, Double> topDays = new java.util.LinkedHashMap<>();
+        String sql = "SELECT request_date, SUM(fee) as daily_revenue FROM document_requests " +
+                     "WHERE payment_status = 'PAID' " +
+                     "GROUP BY request_date ORDER BY daily_revenue DESC LIMIT " + limit;
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                String date = rs.getString("request_date");
+                double revenue = rs.getDouble("daily_revenue");
+                topDays.put(date, revenue);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return topDays;
+    }
+
+    /**
+     * Save financial export path preference
+     * @param path Export folder path
+     */
+    public static void saveFinancialExportPath(String path) {
+        String sql = "MERGE INTO system_preferences (pref_key, pref_value) KEY(pref_key) VALUES ('financial_export_path', ?)";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, path);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Get financial export path preference
+     * @return Export folder path or null if not set
+     */
+    public static String getFinancialExportPath() {
+        String sql = "SELECT pref_value FROM system_preferences WHERE pref_key = 'financial_export_path'";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                return rs.getString("pref_value");
+            }
+        } catch (SQLException e) {
+            // Table might not exist yet, return null
+        }
+        return null;
+    }
+
+    // ==================== NOTIFICATION METHODS ====================
     
     public static void initializeNotificationsTable() {
         try (Connection conn = getConnection();
@@ -1365,8 +2116,25 @@ public class DatabaseHelper {
         }
     }
 
-    // Backup database
+    /**
+     * Backup the database to a specified path
+     * WARNING: Ensure backupPath is validated before calling this method
+     * @param backupPath The file path where the backup should be created
+     * @return true if backup succeeds, false otherwise
+     */
     public static boolean backupDatabase(String backupPath) {
+        // Validate backup path to prevent SQL injection
+        if (backupPath == null || backupPath.trim().isEmpty()) {
+            System.err.println("Invalid backup path: path cannot be null or empty");
+            return false;
+        }
+        
+        // Basic path validation: ensure it doesn't contain SQL injection attempts
+        if (backupPath.contains("'") || backupPath.contains(";") || backupPath.contains("--")) {
+            System.err.println("Invalid backup path: contains potentially dangerous characters");
+            return false;
+        }
+        
         String sql = "BACKUP TO '" + backupPath + "'";
         try (Connection conn = getConnection();
              Statement stmt = conn.createStatement()) {
@@ -1410,5 +2178,137 @@ public class DatabaseHelper {
             e.printStackTrace();
         }
         return counts;
+    }
+
+    /**
+     * Import residents from professor's CSV format
+     * CSV Format: Res_ID,Res_LN,Res_FN,Res_MidN,Family_ID,House_Unit,Street,Subdivision,Gate_Color,Age,Vaccination_Count
+     * @param csvFilePath Path to the CSV file
+     * @return Map with "success" and "failed" counts (never null)
+     */
+    public static Map<String, Integer> importResidentsFromProfessorCSV(String csvFilePath) {
+        Map<String, Integer> result = new HashMap<>();
+        int successCount = 0;
+        int failedCount = 0;
+        
+        String insertSQL = "INSERT INTO residents (first_name, middle_name, last_name, birth_date, gender, address, " +
+                          "family_id, house_unit, street, subdivision, gate_color, vaccination_count, role, image_path) " +
+                          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(insertSQL);
+             java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(csvFilePath))) {
+            
+            String line;
+            boolean isFirstLine = true;
+            int currentYear = java.time.Year.now().getValue();
+            
+            while ((line = br.readLine()) != null) {
+                // Skip header
+                if (isFirstLine) {
+                    isFirstLine = false;
+                    continue;
+                }
+                
+                if (line.trim().isEmpty()) continue;
+                
+                try {
+                    // Use CSV parser that handles quoted fields
+                    String[] fields = parseCSVLine(line);
+                    
+                    if (fields.length < 11) {
+                        System.err.println("Skipping invalid line (expected 11 fields): " + line);
+                        failedCount++;
+                        continue;
+                    }
+                    
+                    // Parse fields: Res_ID,Res_LN,Res_FN,Res_MidN,Family_ID,House_Unit,Street,Subdivision,Gate_Color,Age,Vaccination_Count
+                    String lastName = fields[1].trim();
+                    String firstName = fields[2].trim();
+                    String middleName = fields[3].trim();
+                    int familyId = Integer.parseInt(fields[4].trim());
+                    String houseUnit = fields[5].trim();
+                    String street = fields[6].trim();
+                    String subdivision = fields[7].trim();
+                    String gateColor = fields[8].trim();
+                    int age = Integer.parseInt(fields[9].trim());
+                    int vaccinationCount = Integer.parseInt(fields[10].trim());
+                    
+                    // Validate required fields
+                    if (lastName.isEmpty() || firstName.isEmpty()) {
+                        System.err.println("Skipping line with missing name: " + line);
+                        failedCount++;
+                        continue;
+                    }
+                    
+                    // Validate age range
+                    if (age < 0 || age > 120) {
+                        System.err.println("Skipping line with invalid age: " + line);
+                        failedCount++;
+                        continue;
+                    }
+                    
+                    // Validate vaccination count range
+                    if (vaccinationCount < 0 || vaccinationCount > 20) {
+                        System.err.println("Skipping line with invalid vaccination count: " + line);
+                        failedCount++;
+                        continue;
+                    }
+                    
+                    // Calculate birth date from age (approximation: January 1st of birth year)
+                    int birthYear = currentYear - age;
+                    String birthDate = birthYear + "-01-01";
+                    
+                    // Construct full address
+                    String fullAddress = houseUnit + ", " + street + ", " + subdivision;
+                    
+                    // Set parameters (handle empty optional fields)
+                    pstmt.setString(1, firstName);
+                    pstmt.setString(2, middleName.isEmpty() ? null : middleName);
+                    pstmt.setString(3, lastName);
+                    pstmt.setString(4, birthDate);
+                    pstmt.setString(5, null); // gender (not in CSV, can be added later)
+                    pstmt.setString(6, fullAddress);
+                    pstmt.setInt(7, familyId);
+                    pstmt.setString(8, houseUnit);
+                    pstmt.setString(9, street);
+                    pstmt.setString(10, subdivision);
+                    pstmt.setString(11, gateColor.isEmpty() ? null : gateColor);
+                    pstmt.setInt(12, vaccinationCount);
+                    pstmt.setString(13, "Resident");
+                    pstmt.setString(14, getDefaultResidentImagePath());
+                    
+                    pstmt.executeUpdate();
+                    successCount++;
+                    
+                } catch (NumberFormatException e) {
+                    System.err.println("Failed to parse numeric field in line: " + line);
+                    System.err.println("Error: " + e.getMessage());
+                    failedCount++;
+                } catch (SQLException e) {
+                    System.err.println("Failed to import line: " + line);
+                    System.err.println("Error: " + e.getMessage());
+                    failedCount++;
+                }
+            }
+            
+            // Log import action
+            if (successCount > 0) {
+                logAction("System", 
+                         String.format("Imported %d residents from professor's CSV. Failed: %d", successCount, failedCount),
+                         "Professor CSV Import", "Resident");
+            }
+            
+        } catch (java.io.IOException e) {
+            System.err.println("Error reading CSV file: " + e.getMessage());
+            e.printStackTrace();
+        } catch (SQLException e) {
+            System.err.println("Database error during CSV import: " + e.getMessage());
+            e.printStackTrace();
+        }
+        
+        result.put("success", successCount);
+        result.put("failed", failedCount);
+        return result;
     }
 }

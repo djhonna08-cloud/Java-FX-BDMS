@@ -51,12 +51,13 @@
     -fx-background-color: #ffffff;
     -fx-text-fill: -fx-text-color-primary;
     -fx-prompt-text-fill: -fx-text-color-secondary;
-    -fx-font-size: 16px;
+    -fx-font-size: 15px;
     -fx-background-radius: 8px;
     -fx-border-radius: 8px;
     -fx-border-color: #cbd5e1;
     -fx-border-width: 2px;
     -fx-padding: 12px 16px;
+    -fx-pref-height: 40px;
 }
 
 .text-field:focused, .password-field:focused, .text-area:focused {
@@ -72,6 +73,7 @@
     -fx-font-size: 16px;
     -fx-background-radius: 8px;
     -fx-padding: 12px 24px;
+    -fx-min-height: 40px;
     -fx-cursor: hand;
     -fx-effect: dropshadow(gaussian, rgba(68, 108, 172, 0.3), 8, 0, 0, 3);
 }
@@ -89,6 +91,7 @@
     -fx-font-size: 16px;
     -fx-background-radius: 8px;
     -fx-padding: 12px 24px;
+    -fx-min-height: 40px;
     -fx-cursor: hand;
 }
 
@@ -107,6 +110,7 @@
     -fx-background-radius: 8px;
     -fx-border-radius: 8px;
     -fx-padding: 10px 22px;
+    -fx-min-height: 40px;
     -fx-cursor: hand;
 }
 
@@ -122,6 +126,7 @@
     -fx-font-size: 16px;
     -fx-background-radius: 8px;
     -fx-padding: 12px 24px;
+    -fx-min-height: 40px;
     -fx-cursor: hand;
 }
 
@@ -137,6 +142,12 @@
     -fx-font-size: 16px;
     -fx-background-radius: 8px;
     -fx-padding: 12px 24px;
+    -fx-min-height: 40px;
+    -fx-cursor: hand;
+}
+
+.button-accent:hover {
+    -fx-background-color: #FCD45F;
 }
 
 .hyperlink {
@@ -495,33 +506,57 @@
 
 /* ComboBox */
 .combo-box {
-    -fx-font-size: 16px;
+    -fx-font-size: 15px;
     -fx-background-radius: 8px;
+    -fx-pref-height: 40px;
 }
 
 .combo-box .list-cell {
-    -fx-font-size: 16px;
+    -fx-font-size: 15px;
+    -fx-padding: 8px 12px;
 }
 
-/* Tab Pane */
+/* Tab Pane - Consistent Design */
 .tab-pane {
     -fx-background-color: transparent;
+    -fx-padding: 0;
 }
 
 .tab-pane .tab-header-area {
-    -fx-padding: 0 0 12px 0;
+    -fx-padding: 0 0 0 0;
+    -fx-background-color: transparent;
+    -fx-border-insets: 0;
 }
 
+.tab-pane .tab-header-background {
+    -fx-background-color: transparent;
+    -fx-padding: 0;
+    -fx-background-insets: 0;
+}
+
+.tab-pane .headers-region {
+    -fx-padding: 0;
+    -fx-background-insets: 0;
+}
+
+.tab-pane .tab-header-area .tab-header-background {
+    -fx-padding: 0;
+    -fx-background-insets: 0;
+}
+
+/* Consistent Tab Styling */
 .tab-pane .tab {
     -fx-background-color: #E5E3DE;
-    -fx-font-size: 16px;
+    -fx-font-size: 15px;
     -fx-font-weight: 600;
-    -fx-padding: 12px 24px;
+    -fx-padding: 14px 28px;
     -fx-background-radius: 8px 8px 0 0;
+    -fx-border-width: 0;
+    -fx-cursor: hand;
 }
 
 .tab-pane .tab:hover {
-    -fx-background-color: #F0EEE9;
+    -fx-background-color: #D5D3CE;
 }
 
 .tab-pane .tab:selected {
@@ -534,17 +569,18 @@
 
 .tab-pane .tab .tab-label {
     -fx-text-fill: #1e293b;
-    -fx-font-size: 16px;
+    -fx-font-size: 15px;
     -fx-font-weight: 600;
 }
 
+/* Consistent Tab Content Area */
 .tab-pane .tab-content-area {
     -fx-background-color: #ffffff;
     -fx-border-color: rgba(68, 108, 172, 0.15);
     -fx-border-width: 1px;
     -fx-border-radius: 0 8px 8px 8px;
     -fx-background-radius: 0 8px 8px 8px;
-    -fx-padding: 0;
+    -fx-padding: 24px;
 }
 
 /* Dialog Pane */
@@ -592,4 +628,105 @@
 .badge-info {
     -fx-background-color: #dbeafe;
     -fx-text-fill: #1e40af;
+}
+
+/* Consistent Action Button Containers */
+.action-button-container {
+    -fx-padding: 16px 0 0 0;
+    -fx-spacing: 12px;
+    -fx-alignment: center-left;
+}
+
+/* Consistent Form Sections */
+.form-section {
+    -fx-padding: 24px;
+    -fx-spacing: 16px;
+}
+
+.form-section-title {
+    -fx-font-size: 18px;
+    -fx-font-weight: 700;
+    -fx-text-fill: -fx-text-color-primary;
+    -fx-padding: 0 0 8px 0;
+}
+
+/* Consistent Panel Headers */
+.panel-header {
+    -fx-padding: 0 0 16px 0;
+    -fx-spacing: 12px;
+    -fx-alignment: center-left;
+}
+
+.panel-title {
+    -fx-font-size: 20px;
+    -fx-font-weight: 700;
+    -fx-text-fill: -fx-text-color-primary;
+}
+
+/* Consistent Button Sizing */
+.button-standard {
+    -fx-min-width: 120px;
+    -fx-pref-height: 40px;
+    -fx-font-size: 16px;  /* Corrected: minimum 16px for readability */
+    -fx-font-weight: 600;
+}
+
+.button-small {
+    -fx-min-width: 100px;
+    -fx-pref-height: 36px;
+    -fx-font-size: 14px;  /* Acceptable: 14px for small UI elements */
+    -fx-font-weight: 600;
+}
+
+.button-large {
+    -fx-min-width: 140px;
+    -fx-pref-height: 44px;
+    -fx-font-size: 16px;
+    -fx-font-weight: 600;
+}
+
+/* Consistent Table Action Buttons */
+.table-action-buttons {
+    -fx-padding: 12px 0 0 0;
+    -fx-spacing: 10px;
+    -fx-alignment: center-left;
+}
+
+/* Consistent Content Padding */
+.content-panel {
+    -fx-padding: 24px;
+    -fx-spacing: 20px;
+}
+
+/* Consistent Input Field Sizing */
+.input-standard {
+    -fx-pref-height: 40px;
+    -fx-font-size: 16px;  /* Corrected: minimum 16px for form inputs */
+}
+
+.input-large {
+    -fx-pref-height: 44px;
+    -fx-font-size: 16px;
+}
+
+/* Consistent ComboBox Styling */
+.combo-box-standard {
+    -fx-pref-height: 40px;
+    -fx-font-size: 16px;  /* Corrected: minimum 16px for form inputs */
+    -fx-background-radius: 8px;
+}
+
+/* Consistent TextArea Styling */
+.text-area-standard {
+    -fx-pref-height: 120px;
+    -fx-font-size: 16px;  /* Corrected: minimum 16px for form inputs */
+}
+
+/* Consistent Section Spacing */
+.section-spacing {
+    -fx-spacing: 16px;
+}
+
+.section-spacing-large {
+    -fx-spacing: 24px;
 }

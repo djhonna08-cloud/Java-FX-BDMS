@@ -470,6 +470,51 @@ public class App extends Application {
         var maintenanceBtn = createSidebarButton("Maintenance", FontAwesomeSolid.SHIELD_ALT);
         maintenanceBtn.setUserData("maintenance");
 
+        // Apply permission-based visibility
+        Map<String, String> userPermissions = DatabaseHelper.getPermissions(currentRole);
+        
+        // Hide or disable menu items based on permissions
+        if ("None".equals(userPermissions.get("Analytics & Overview"))) {
+            overviewBtn.setVisible(false);
+            overviewBtn.setManaged(false);
+        }
+        if ("None".equals(userPermissions.get("User & Access"))) {
+            usersBtn.setVisible(false);
+            usersBtn.setManaged(false);
+        }
+        if ("None".equals(userPermissions.get("Resident Data"))) {
+            residentBtn.setVisible(false);
+            residentBtn.setManaged(false);
+        }
+        if ("None".equals(userPermissions.get("Certificates & Clearances"))) {
+            certificatesBtn.setVisible(false);
+            certificatesBtn.setManaged(false);
+        }
+        if ("None".equals(userPermissions.get("Complaints & Incidents"))) {
+            complaintsBtn.setVisible(false);
+            complaintsBtn.setManaged(false);
+        }
+        if ("None".equals(userPermissions.get("Announcements"))) {
+            announcementsBtn.setVisible(false);
+            announcementsBtn.setManaged(false);
+        }
+        if ("None".equals(userPermissions.get("Financial Reports"))) {
+            financialBtn.setVisible(false);
+            financialBtn.setManaged(false);
+        }
+        if ("None".equals(userPermissions.get("Security Features"))) {
+            securityBtn.setVisible(false);
+            securityBtn.setManaged(false);
+        }
+        if ("None".equals(userPermissions.get("System Config"))) {
+            systemBtn.setVisible(false);
+            systemBtn.setManaged(false);
+        }
+        if ("None".equals(userPermissions.get("Maintenance"))) {
+            maintenanceBtn.setVisible(false);
+            maintenanceBtn.setManaged(false);
+        }
+
 
 
 
@@ -695,8 +740,12 @@ public class App extends Application {
 
         double totalRevenue = DatabaseHelper.getTotalRevenue();
         var revenueCard = createStatCard("Revenue", String.format("₱%.2f", totalRevenue), "#eab308");
-        var clearanceCard = createStatCard("Pending Clearances", "0", "#f43f5e");
-        var casesCard = createStatCard("Active Cases", "0", "#3b82f6");
+        
+        int pendingClearances = DatabaseHelper.getPendingClearancesCount();
+        var clearanceCard = createStatCard("Pending Clearances", String.valueOf(pendingClearances), "#f43f5e");
+        
+        int activeCases = DatabaseHelper.getActiveCasesCount();
+        var casesCard = createStatCard("Active Cases", String.valueOf(activeCases), "#3b82f6");
         
         // Get announcement counts by type
         ObservableList<Announcement> allAnnouncements = DatabaseHelper.getAllAnnouncements();
@@ -945,36 +994,76 @@ public class App extends Application {
     private void showPermissions(VBox center) {
         var permissionsTable = new TableView<Map.Entry<String, Map<String, String>>>();
         permissionsTable.getStyleClass().add("table-view");
+        permissionsTable.setColumnResizePolicy(TableView.UNCONSTRAINED_RESIZE_POLICY);
 
         TableColumn<Map.Entry<String, Map<String, String>>, String> roleCol = new TableColumn<>("Role");
         roleCol.setCellValueFactory(cellData -> new javafx.beans.property.SimpleStringProperty(cellData.getValue().getKey()));
-        roleCol.setPrefWidth(150);
+        roleCol.setPrefWidth(180);
+        roleCol.setMinWidth(180);
 
-        TableColumn<Map.Entry<String, Map<String, String>>, String> residentDataCol = new TableColumn<>("Resident Data");
+        // Create columns for all system modules
+        TableColumn<Map.Entry<String, Map<String, String>>, String> analyticsCol = new TableColumn<>("Analytics");
+        analyticsCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Analytics & Overview")));
+        analyticsCol.setPrefWidth(100);
+        analyticsCol.setCellFactory(param -> createPermissionCell());
+
+        TableColumn<Map.Entry<String, Map<String, String>>, String> userAccessCol = new TableColumn<>("Users");
+        userAccessCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("User & Access")));
+        userAccessCol.setPrefWidth(100);
+        userAccessCol.setCellFactory(param -> createPermissionCell());
+
+        TableColumn<Map.Entry<String, Map<String, String>>, String> residentDataCol = new TableColumn<>("Residents");
         residentDataCol.setCellValueFactory(cellData -> 
             new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Resident Data")));
-        residentDataCol.setPrefWidth(120);
+        residentDataCol.setPrefWidth(100);
         residentDataCol.setCellFactory(param -> createPermissionCell());
 
-        TableColumn<Map.Entry<String, Map<String, String>>, String> financialsCol = new TableColumn<>("Financials");
-        financialsCol.setCellValueFactory(cellData -> 
-            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Financials")));
-        financialsCol.setPrefWidth(120);
-        financialsCol.setCellFactory(param -> createPermissionCell());
+        TableColumn<Map.Entry<String, Map<String, String>>, String> certificatesCol = new TableColumn<>("Certificates");
+        certificatesCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Certificates & Clearances")));
+        certificatesCol.setPrefWidth(100);
+        certificatesCol.setCellFactory(param -> createPermissionCell());
 
-        TableColumn<Map.Entry<String, Map<String, String>>, String> blotterCol = new TableColumn<>("Blotter/Legal");
-        blotterCol.setCellValueFactory(cellData -> 
-            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Blotter/Legal")));
-        blotterCol.setPrefWidth(120);
-        blotterCol.setCellFactory(param -> createPermissionCell());
+        TableColumn<Map.Entry<String, Map<String, String>>, String> complaintsCol = new TableColumn<>("Complaints");
+        complaintsCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Complaints & Incidents")));
+        complaintsCol.setPrefWidth(100);
+        complaintsCol.setCellFactory(param -> createPermissionCell());
 
-        TableColumn<Map.Entry<String, Map<String, String>>, String> systemCol = new TableColumn<>("System Settings");
+        TableColumn<Map.Entry<String, Map<String, String>>, String> announcementsCol = new TableColumn<>("Announcements");
+        announcementsCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Announcements")));
+        announcementsCol.setPrefWidth(120);
+        announcementsCol.setCellFactory(param -> createPermissionCell());
+
+        TableColumn<Map.Entry<String, Map<String, String>>, String> financialCol = new TableColumn<>("Financial");
+        financialCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Financial Reports")));
+        financialCol.setPrefWidth(100);
+        financialCol.setCellFactory(param -> createPermissionCell());
+
+        TableColumn<Map.Entry<String, Map<String, String>>, String> securityCol = new TableColumn<>("Security");
+        securityCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Security Features")));
+        securityCol.setPrefWidth(100);
+        securityCol.setCellFactory(param -> createPermissionCell());
+
+        TableColumn<Map.Entry<String, Map<String, String>>, String> systemCol = new TableColumn<>("System");
         systemCol.setCellValueFactory(cellData -> 
-            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("System Settings")));
-        systemCol.setPrefWidth(120);
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("System Config")));
+        systemCol.setPrefWidth(100);
         systemCol.setCellFactory(param -> createPermissionCell());
 
-        permissionsTable.getColumns().setAll(List.of(roleCol, residentDataCol, financialsCol, blotterCol, systemCol));
+        TableColumn<Map.Entry<String, Map<String, String>>, String> maintenanceCol = new TableColumn<>("Maintenance");
+        maintenanceCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Maintenance")));
+        maintenanceCol.setPrefWidth(110);
+        maintenanceCol.setCellFactory(param -> createPermissionCell());
+
+        permissionsTable.getColumns().setAll(List.of(roleCol, analyticsCol, userAccessCol, residentDataCol, 
+            certificatesCol, complaintsCol, announcementsCol, financialCol, securityCol, systemCol, maintenanceCol));
 
         // Fetch roles dynamically from the database
         ObservableList<Role> allRoles = DatabaseHelper.getAllRoles();
@@ -986,11 +1075,35 @@ public class App extends Application {
         permissionsTable.setItems(permissionsData);
 
         var infoLabel = new Label("Permission Levels: None, View Only, Manage, Full Access");
-        infoLabel.setStyle("-fx-font-size: 11; -fx-text-fill: " + "#333" + ";");
+        infoLabel.setStyle("-fx-font-size: 11; -fx-text-fill: " + "#333" + "; -fx-font-weight: bold;");
 
-        var content = new VBox(12, infoLabel, permissionsTable);
+        var legendBox = new HBox(15);
+        legendBox.setPadding(new Insets(10, 0, 10, 0));
+        legendBox.getChildren().addAll(
+            createLegendItem("None", "#ef4444"),
+            createLegendItem("View Only", "#f59e0b"),
+            createLegendItem("Manage", "#3b82f6"),
+            createLegendItem("Full Access", "#10b981")
+        );
+
+        var content = new VBox(12, infoLabel, legendBox, permissionsTable);
         VBox.setVgrow(permissionsTable, Priority.ALWAYS);
         updateDashboardContent(center, "Role Permissions", content);
+    }
+
+    private HBox createLegendItem(String label, String color) {
+        var box = new HBox(5);
+        box.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        
+        var colorBox = new javafx.scene.layout.Region();
+        colorBox.setPrefSize(12, 12);
+        colorBox.setStyle("-fx-background-color: " + color + "; -fx-background-radius: 2;");
+        
+        var labelText = new Label(label);
+        labelText.setStyle("-fx-font-size: 10; -fx-text-fill: #666;");
+        
+        box.getChildren().addAll(colorBox, labelText);
+        return box;
     }
 
     private TableCell<Map.Entry<String, Map<String, String>>, String> createPermissionCell() {
@@ -1050,14 +1163,15 @@ public class App extends Application {
         // Two tabs: Request new document and view requests
         TabPane tabPane = new TabPane();
         tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        tabPane.getStyleClass().add("tab-pane");
 
         // Tab 1: Request New Document
         Tab requestTab = new Tab("Request Document", createDocumentRequestPanel());
-        requestTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+        requestTab.getStyleClass().add("tab");
 
         // Tab 2: Pending & Completed Requests
         Tab requestsTab = new Tab("Document Requests", createDocumentRequestsTable());
-        requestsTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+        requestsTab.getStyleClass().add("tab");
 
         tabPane.getTabs().addAll(requestTab, requestsTab);
         updateDashboardContent(center, "Certificates & Clearances", tabPane);
@@ -1510,6 +1624,10 @@ public class App extends Application {
         Button addButton = new Button("Add Resident");
         addButton.setGraphic(new FontIcon(FontAwesomeSolid.PLUS_CIRCLE));
 
+        Button importButton = new Button("Import CSV");
+        importButton.setGraphic(new FontIcon(FontAwesomeSolid.FILE_IMPORT));
+        importButton.getStyleClass().add("button-accent");
+
         Button editButton = new Button("Edit Resident");
         editButton.setGraphic(new FontIcon(FontAwesomeSolid.PENCIL_ALT));
 
@@ -1601,7 +1719,66 @@ public class App extends Application {
             }
         });
 
-        ToolBar toolBar = new ToolBar(addButton, editButton, deleteButton, new Separator(Orientation.VERTICAL), idButton, viewIdBtn);
+        importButton.setOnAction(e -> {
+            FileChooser fileChooser = new FileChooser();
+            fileChooser.setTitle("Import Residents from CSV");
+            fileChooser.getExtensionFilters().add(
+                new FileChooser.ExtensionFilter("CSV Files", "*.csv")
+            );
+            
+            File selectedFile = fileChooser.showOpenDialog(primaryStage);
+            if (selectedFile != null) {
+                // Show confirmation dialog
+                Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+                confirm.setTitle("Import CSV");
+                confirm.setHeaderText("Import residents from CSV file?");
+                confirm.setContentText("File: " + selectedFile.getName() + "\n\nThis will add new residents to the database.");
+                
+                confirm.showAndWait().ifPresent(response -> {
+                    if (response == ButtonType.OK) {
+                        // Perform import
+                        DatabaseHelper.ImportResult result = DatabaseHelper.bulkImportResidentsFromCSV(selectedFile.getAbsolutePath());
+                        int success = result.getSuccessCount();
+                        int failed = result.getErrorCount();
+                        
+                        // Show result dialog
+                        Alert resultAlert = new Alert(Alert.AlertType.INFORMATION);
+                        resultAlert.setTitle("Import Complete");
+                        resultAlert.setHeaderText("CSV Import Results");
+                        
+                        if (result.hasErrors()) {
+                            // Show detailed error information
+                            StringBuilder content = new StringBuilder();
+                            content.append(String.format("Successfully imported: %d residents\nFailed: %d records\n\n", success, failed));
+                            
+                            if (result.getErrors().size() <= 5) {
+                                content.append("Errors:\n");
+                                result.getErrors().forEach(error -> content.append("• ").append(error).append("\n"));
+                            } else {
+                                content.append("First 5 errors:\n");
+                                result.getErrors().stream().limit(5).forEach(error -> content.append("• ").append(error).append("\n"));
+                                content.append(String.format("\n... and %d more errors", result.getErrors().size() - 5));
+                            }
+                            
+                            resultAlert.setContentText(content.toString());
+                        } else {
+                            resultAlert.setContentText(
+                                String.format("Successfully imported: %d residents\nFailed: %d records", success, failed)
+                            );
+                        }
+                        resultAlert.showAndWait();
+                        
+                        // Refresh the table
+                        if (success > 0) {
+                            loadResidentData();
+                            showToast(String.format("Imported %d residents successfully.", success));
+                        }
+                    }
+                });
+            }
+        });
+
+        ToolBar toolBar = new ToolBar(addButton, importButton, editButton, deleteButton, new Separator(Orientation.VERTICAL), idButton, viewIdBtn);
         toolBar.setStyle("-fx-background-color: transparent; -fx-padding: 0;");
 
         var exportButton = new Button("📄 Export to PDF");
@@ -2259,27 +2436,55 @@ public class App extends Application {
     // ==================== USER & ACCESS MANAGEMENT ====================
 
     private void showUserAndAccess(VBox center) {
+        // Get user permissions for User & Access module
+        Map<String, String> userPermissions = DatabaseHelper.getPermissions(currentRole);
+        String userAccessPermission = userPermissions.get("User & Access");
+        
         // Three tabs: Manage Roles, Permissions, and Audit Log
         TabPane tabPane = new TabPane();
         tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        tabPane.getStyleClass().add("tab-pane");
 
-        // Tab 1: Manage Roles
-        Tab rolesTab = new Tab("Manage Roles", createManageRolesPanel());
-        rolesTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+        // Tab 1: Manage Roles - Only for Full Access and Manage
+        if ("Full Access".equals(userAccessPermission) || "Manage".equals(userAccessPermission)) {
+            Tab rolesTab = new Tab("Manage Roles", createManageRolesPanel());
+            rolesTab.getStyleClass().add("tab");
+            tabPane.getTabs().add(rolesTab);
+        }
 
-        // Tab 2: Role Permissions
-        Tab permissionsTab = new Tab("Role Permissions", createPermissionsPanel());
-        permissionsTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+        // Tab 2: Role Permissions - Visible for Full Access, Manage, and View Only
+        if (!"None".equals(userAccessPermission)) {
+            Tab permissionsTab = new Tab("Role Permissions", createPermissionsPanel());
+            permissionsTab.getStyleClass().add("tab");
+            tabPane.getTabs().add(permissionsTab);
+        }
 
-        // Tab 3: Audit Log
-        Tab auditTab = new Tab("Audit Log", createAuditLogPanel());
-        auditTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+        // Tab 3: Audit Log - Visible for Full Access, Manage, and View Only
+        if (!"None".equals(userAccessPermission)) {
+            Tab auditTab = new Tab("Audit Log", createAuditLogPanel());
+            auditTab.getStyleClass().add("tab");
+            tabPane.getTabs().add(auditTab);
+        }
 
-        tabPane.getTabs().addAll(rolesTab, permissionsTab, auditTab);
-        updateDashboardContent(center, "User & Access Management", tabPane);
+        // If no tabs are available (shouldn't happen if menu is hidden), show message
+        if (tabPane.getTabs().isEmpty()) {
+            Label noAccessLabel = new Label("You do not have permission to access this section.");
+            noAccessLabel.setStyle("-fx-font-size: 14; -fx-text-fill: #666; -fx-padding: 20;");
+            VBox messageBox = new VBox(noAccessLabel);
+            messageBox.setAlignment(javafx.geometry.Pos.CENTER);
+            messageBox.setPadding(new Insets(50));
+            updateDashboardContent(center, "User & Access Management", messageBox);
+        } else {
+            updateDashboardContent(center, "User & Access Management", tabPane);
+        }
     }
 
     private VBox createManageRolesPanel() {
+        // Get user permissions
+        Map<String, String> userPermissions = DatabaseHelper.getPermissions(currentRole);
+        String userAccessPermission = userPermissions.get("User & Access");
+        boolean canManage = "Full Access".equals(userAccessPermission) || "Manage".equals(userAccessPermission);
+        
         var rolesTable = new TableView<Role>();
         rolesTable.getStyleClass().add("table-view");
         rolesTable.setPrefHeight(400);
@@ -2299,9 +2504,10 @@ public class App extends Application {
 
         rolesTable.getColumns().setAll(List.of(idCol, nameCol, descriptionCol));
 
-        // Toolbar buttons
+        // Toolbar buttons - only show if user can manage
         Button addButton = new Button("Add Role");
         addButton.setGraphic(new FontIcon(FontAwesomeSolid.PLUS_CIRCLE));
+        addButton.setDisable(!canManage);
 
         Button editButton = new Button("Edit Role");
         editButton.setGraphic(new FontIcon(FontAwesomeSolid.PENCIL_ALT));
@@ -2312,51 +2518,65 @@ public class App extends Application {
         deleteButton.setDisable(true);
 
         rolesTable.getSelectionModel().selectedItemProperty().addListener((obs, oldSelection, newSelection) -> {
-            boolean isSelected = newSelection != null;
+            boolean isSelected = newSelection != null && canManage;
             editButton.setDisable(!isSelected);
             deleteButton.setDisable(!isSelected);
         });
 
         addButton.setOnAction(e -> {
-            showRoleDialog(null).ifPresent(role -> {
-                DatabaseHelper.addRole(role);
-                loadRoleData(rolesTable);
-                showToast("Role created successfully.");
-            });
-        });
-
-        editButton.setOnAction(e -> {
-            Role selected = rolesTable.getSelectionModel().getSelectedItem();
-            if (selected != null) {
-                showRoleDialog(selected).ifPresent(role -> {
-                    DatabaseHelper.updateRole(role);
+            if (canManage) {
+                showRoleDialog(null).ifPresent(role -> {
+                    DatabaseHelper.addRole(role);
                     loadRoleData(rolesTable);
-                    showToast("Role updated successfully.");
+                    showToast("Role created successfully.");
                 });
             }
         });
 
-        deleteButton.setOnAction(e -> {
-            Role selected = rolesTable.getSelectionModel().getSelectedItem();
-            if (selected != null) {
-                Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
-                confirm.setTitle("Delete Role");
-                confirm.setHeaderText("Are you sure you want to delete the role \"" + selected.getName() + "\"?");
-                confirm.setContentText("This action cannot be undone. Residents with this role will be unaffected.");
-                confirm.showAndWait().ifPresent(response -> {
-                    if (response == ButtonType.OK) {
-                        DatabaseHelper.deleteRole(selected.getId());
+        editButton.setOnAction(e -> {
+            if (canManage) {
+                Role selected = rolesTable.getSelectionModel().getSelectedItem();
+                if (selected != null) {
+                    showRoleDialog(selected).ifPresent(role -> {
+                        DatabaseHelper.updateRole(role);
                         loadRoleData(rolesTable);
-                        showToast("Role deleted successfully.");
-                    }
-                });
+                        showToast("Role updated successfully.");
+                    });
+                }
+            }
+        });
+
+        deleteButton.setOnAction(e -> {
+            if (canManage) {
+                Role selected = rolesTable.getSelectionModel().getSelectedItem();
+                if (selected != null) {
+                    Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+                    confirm.setTitle("Delete Role");
+                    confirm.setHeaderText("Are you sure you want to delete the role \"" + selected.getName() + "\"?");
+                    confirm.setContentText("This action cannot be undone. Residents with this role will be unaffected.");
+                    confirm.showAndWait().ifPresent(response -> {
+                        if (response == ButtonType.OK) {
+                            DatabaseHelper.deleteRole(selected.getId());
+                            loadRoleData(rolesTable);
+                            showToast("Role deleted successfully.");
+                        }
+                    });
+                }
             }
         });
 
         ToolBar toolBar = new ToolBar(addButton, editButton, deleteButton);
         toolBar.setStyle("-fx-background-color: transparent; -fx-padding: 0;");
 
-        var content = new VBox(12, toolBar, rolesTable);
+        VBox content;
+        if (!canManage) {
+            // Add read-only notice for view-only users
+            Label readOnlyLabel = new Label("ℹ️ View Only Mode - You cannot add, edit, or delete roles");
+            readOnlyLabel.setStyle("-fx-font-size: 11; -fx-text-fill: #f59e0b; -fx-padding: 5 0 5 0; -fx-font-weight: bold;");
+            content = new VBox(12, readOnlyLabel, toolBar, rolesTable);
+        } else {
+            content = new VBox(12, toolBar, rolesTable);
+        }
         VBox.setVgrow(rolesTable, Priority.ALWAYS);
 
         // Load roles
@@ -2368,36 +2588,88 @@ public class App extends Application {
     private VBox createPermissionsPanel() {
         var permissionsTable = new TableView<Map.Entry<String, Map<String, String>>>();
         permissionsTable.getStyleClass().add("table-view");
+        permissionsTable.setColumnResizePolicy(TableView.UNCONSTRAINED_RESIZE_POLICY);
+        permissionsTable.setEditable(true); // Make table editable
 
         TableColumn<Map.Entry<String, Map<String, String>>, String> roleCol = new TableColumn<>("Role");
         roleCol.setCellValueFactory(cellData -> new javafx.beans.property.SimpleStringProperty(cellData.getValue().getKey()));
-        roleCol.setPrefWidth(150);
+        roleCol.setPrefWidth(180);
+        roleCol.setMinWidth(180);
+        roleCol.setEditable(false); // Role name not editable
 
-        TableColumn<Map.Entry<String, Map<String, String>>, String> residentDataCol = new TableColumn<>("Resident Data");
+        // Create columns for all system modules - all editable
+        TableColumn<Map.Entry<String, Map<String, String>>, String> analyticsCol = new TableColumn<>("Analytics");
+        analyticsCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Analytics & Overview")));
+        analyticsCol.setPrefWidth(100);
+        analyticsCol.setCellFactory(param -> createEditablePermissionCell());
+        analyticsCol.setEditable(true);
+
+        TableColumn<Map.Entry<String, Map<String, String>>, String> userAccessCol = new TableColumn<>("Users");
+        userAccessCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("User & Access")));
+        userAccessCol.setPrefWidth(100);
+        userAccessCol.setCellFactory(param -> createEditablePermissionCell());
+        userAccessCol.setEditable(true);
+
+        TableColumn<Map.Entry<String, Map<String, String>>, String> residentDataCol = new TableColumn<>("Residents");
         residentDataCol.setCellValueFactory(cellData -> 
             new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Resident Data")));
-        residentDataCol.setPrefWidth(120);
-        residentDataCol.setCellFactory(param -> createPermissionCell());
+        residentDataCol.setPrefWidth(100);
+        residentDataCol.setCellFactory(param -> createEditablePermissionCell());
+        residentDataCol.setEditable(true);
 
-        TableColumn<Map.Entry<String, Map<String, String>>, String> financialsCol = new TableColumn<>("Financials");
-        financialsCol.setCellValueFactory(cellData -> 
-            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Financials")));
-        financialsCol.setPrefWidth(120);
-        financialsCol.setCellFactory(param -> createPermissionCell());
+        TableColumn<Map.Entry<String, Map<String, String>>, String> certificatesCol = new TableColumn<>("Certificates");
+        certificatesCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Certificates & Clearances")));
+        certificatesCol.setPrefWidth(100);
+        certificatesCol.setCellFactory(param -> createEditablePermissionCell());
+        certificatesCol.setEditable(true);
 
-        TableColumn<Map.Entry<String, Map<String, String>>, String> blotterCol = new TableColumn<>("Blotter/Legal");
-        blotterCol.setCellValueFactory(cellData -> 
-            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Blotter/Legal")));
-        blotterCol.setPrefWidth(120);
-        blotterCol.setCellFactory(param -> createPermissionCell());
+        TableColumn<Map.Entry<String, Map<String, String>>, String> complaintsCol = new TableColumn<>("Complaints");
+        complaintsCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Complaints & Incidents")));
+        complaintsCol.setPrefWidth(100);
+        complaintsCol.setCellFactory(param -> createEditablePermissionCell());
+        complaintsCol.setEditable(true);
 
-        TableColumn<Map.Entry<String, Map<String, String>>, String> systemCol = new TableColumn<>("System Settings");
+        TableColumn<Map.Entry<String, Map<String, String>>, String> announcementsCol = new TableColumn<>("Announcements");
+        announcementsCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Announcements")));
+        announcementsCol.setPrefWidth(120);
+        announcementsCol.setCellFactory(param -> createEditablePermissionCell());
+        announcementsCol.setEditable(true);
+
+        TableColumn<Map.Entry<String, Map<String, String>>, String> financialCol = new TableColumn<>("Financial");
+        financialCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Financial Reports")));
+        financialCol.setPrefWidth(100);
+        financialCol.setCellFactory(param -> createEditablePermissionCell());
+        financialCol.setEditable(true);
+
+        TableColumn<Map.Entry<String, Map<String, String>>, String> securityCol = new TableColumn<>("Security");
+        securityCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Security Features")));
+        securityCol.setPrefWidth(100);
+        securityCol.setCellFactory(param -> createEditablePermissionCell());
+        securityCol.setEditable(true);
+
+        TableColumn<Map.Entry<String, Map<String, String>>, String> systemCol = new TableColumn<>("System");
         systemCol.setCellValueFactory(cellData -> 
-            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("System Settings")));
-        systemCol.setPrefWidth(120);
-        systemCol.setCellFactory(param -> createPermissionCell());
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("System Config")));
+        systemCol.setPrefWidth(100);
+        systemCol.setCellFactory(param -> createEditablePermissionCell());
+        systemCol.setEditable(true);
 
-        permissionsTable.getColumns().setAll(List.of(roleCol, residentDataCol, financialsCol, blotterCol, systemCol));
+        TableColumn<Map.Entry<String, Map<String, String>>, String> maintenanceCol = new TableColumn<>("Maintenance");
+        maintenanceCol.setCellValueFactory(cellData -> 
+            new javafx.beans.property.SimpleStringProperty(cellData.getValue().getValue().get("Maintenance")));
+        maintenanceCol.setPrefWidth(110);
+        maintenanceCol.setCellFactory(param -> createEditablePermissionCell());
+        maintenanceCol.setEditable(true);
+
+        permissionsTable.getColumns().setAll(List.of(roleCol, analyticsCol, userAccessCol, residentDataCol, 
+            certificatesCol, complaintsCol, announcementsCol, financialCol, securityCol, systemCol, maintenanceCol));
 
         // Fetch roles dynamically from the database
         ObservableList<Role> allRoles = DatabaseHelper.getAllRoles();
@@ -2409,12 +2681,142 @@ public class App extends Application {
         permissionsTable.setItems(permissionsData);
 
         var infoLabel = new Label("Permission Levels: None, View Only, Manage, Full Access");
-        infoLabel.setStyle("-fx-font-size: 11; -fx-text-fill: " + "#333" + ";");
+        infoLabel.setStyle("-fx-font-size: 11; -fx-text-fill: " + "#333" + "; -fx-font-weight: bold;");
 
-        var content = new VBox(12, infoLabel, permissionsTable);
+        var legendBox = new HBox(15);
+        legendBox.setPadding(new Insets(10, 0, 10, 0));
+        legendBox.getChildren().addAll(
+            createLegendItem("None", "#ef4444"),
+            createLegendItem("View Only", "#f59e0b"),
+            createLegendItem("Manage", "#3b82f6"),
+            createLegendItem("Full Access", "#10b981")
+        );
+
+        var content = new VBox(12, infoLabel, legendBox, permissionsTable);
         VBox.setVgrow(permissionsTable, Priority.ALWAYS);
         
-        return content;
+        // Add save button for permissions
+        Button savePermissionsBtn = new Button("Save All Changes", new FontIcon(FontAwesomeSolid.SAVE));
+        savePermissionsBtn.setStyle("-fx-font-size: 12; -fx-padding: 10; -fx-background-color: #10b981; -fx-text-fill: white;");
+        savePermissionsBtn.setOnAction(e -> {
+            // Save all permissions to database
+            for (Map.Entry<String, Map<String, String>> entry : permissionsData) {
+                String roleName = entry.getKey();
+                Map<String, String> permissions = entry.getValue();
+                for (Map.Entry<String, String> perm : permissions.entrySet()) {
+                    DatabaseHelper.savePermission(roleName, perm.getKey(), perm.getValue());
+                }
+            }
+            showToast("✓ Permissions saved successfully! Please restart the application for changes to take effect.");
+        });
+        
+        Label noteLabel = new Label("ℹ️ Click on any permission cell to change it. Changes take effect after restart.");
+        noteLabel.setStyle("-fx-font-size: 11; -fx-text-fill: #666; -fx-padding: 5 0;");
+        
+        VBox contentWithButton = new VBox(12, infoLabel, legendBox, permissionsTable, noteLabel, savePermissionsBtn);
+        VBox.setVgrow(permissionsTable, Priority.ALWAYS);
+        
+        return contentWithButton;
+    }
+
+    private TableCell<Map.Entry<String, Map<String, String>>, String> createEditablePermissionCell() {
+        return new TableCell<>() {
+            private ComboBox<String> comboBox;
+            
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                } else {
+                    if (isEditing()) {
+                        if (comboBox != null) {
+                            comboBox.setValue(item);
+                        }
+                        setGraphic(comboBox);
+                        setText(null);
+                    } else {
+                        setText(item);
+                        setGraphic(null);
+                        
+                        // Set background color based on permission level
+                        String style = "-fx-padding: 5; -fx-alignment: center; ";
+                        switch (item) {
+                            case "Full Access":
+                                style += "-fx-background-color: #d1fae5; -fx-text-fill: #065f46;";
+                                break;
+                            case "Manage":
+                                style += "-fx-background-color: #dbeafe; -fx-text-fill: #1e40af;";
+                                break;
+                            case "View Only":
+                                style += "-fx-background-color: #fef3c7; -fx-text-fill: #92400e;";
+                                break;
+                            case "None":
+                                style += "-fx-background-color: #fee2e2; -fx-text-fill: #991b1b;";
+                                break;
+                        }
+                        setStyle(style);
+                    }
+                }
+            }
+            
+            @Override
+            public void startEdit() {
+                super.startEdit();
+                
+                if (comboBox == null) {
+                    createComboBox();
+                }
+                
+                comboBox.setValue(getItem());
+                setGraphic(comboBox);
+                setText(null);
+            }
+            
+            @Override
+            public void cancelEdit() {
+                super.cancelEdit();
+                setText(getItem());
+                setGraphic(null);
+            }
+            
+            private void createComboBox() {
+                comboBox = new ComboBox<>(FXCollections.observableArrayList(
+                    "None", "View Only", "Manage", "Full Access"
+                ));
+                comboBox.setOnAction(event -> {
+                    String newValue = comboBox.getValue();
+                    commitEdit(newValue);
+                    
+                    // Update the underlying data
+                    Map.Entry<String, Map<String, String>> rowData = getTableView().getItems().get(getIndex());
+                    TableColumn<Map.Entry<String, Map<String, String>>, String> column = getTableColumn();
+                    String moduleName = column.getText();
+                    
+                    // Map column header to full module name
+                    String fullModuleName = getFullModuleName(moduleName);
+                    rowData.getValue().put(fullModuleName, newValue);
+                });
+            }
+            
+            private String getFullModuleName(String shortName) {
+                switch (shortName) {
+                    case "Analytics": return "Analytics & Overview";
+                    case "Users": return "User & Access";
+                    case "Residents": return "Resident Data";
+                    case "Certificates": return "Certificates & Clearances";
+                    case "Complaints": return "Complaints & Incidents";
+                    case "Announcements": return "Announcements";
+                    case "Financial": return "Financial Reports";
+                    case "Security": return "Security Features";
+                    case "System": return "System Config";
+                    case "Maintenance": return "Maintenance";
+                    default: return shortName;
+                }
+            }
+        };
     }
 
     private VBox createAuditLogPanel() {
@@ -2917,19 +3319,18 @@ public class App extends Application {
         // Create tabs for posting and managing
         var postingTab = new Tab("Post Announcement", createAnnouncementPostingPanel());
         postingTab.setClosable(false);
+        postingTab.getStyleClass().add("tab");
 
         var managementTab = new Tab("Manage Announcements", createAnnouncementManagementPanel());
         managementTab.setClosable(false);
+        managementTab.getStyleClass().add("tab");
 
         var tabPane = new TabPane(postingTab, managementTab);
         tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
-
-        var container = new VBox(10, tabPane);
-        container.setPadding(new Insets(15));
-        container.setStyle("-fx-background-color: " + "#f5f5f5" + ";");
+        tabPane.getStyleClass().add("tab-pane");
 
         center.getChildren().clear();
-        center.getChildren().add(container);
+        center.getChildren().add(tabPane);
     }
 
     private VBox createAnnouncementPostingPanel() {
@@ -3217,13 +3618,113 @@ public class App extends Application {
         var titleLabel = new Label("Financial Reports");
         titleLabel.setStyle("-fx-font-size: 16; -fx-font-weight: bold;");
 
+        // Export Folder Configuration Section
+        var exportConfigBox = new VBox(10);
+        exportConfigBox.setPadding(new Insets(15));
+        exportConfigBox.setStyle("-fx-background-color: #f0f9ff; -fx-border-color: #3b82f6; -fx-border-width: 1; -fx-border-radius: 5; -fx-background-radius: 5;");
+
+        var configTitle = new Label("Export Configuration");
+        configTitle.setStyle("-fx-font-size: 13; -fx-font-weight: bold; -fx-text-fill: #1e40af;");
+
+        var configDesc = new Label("Configure the destination folder where financial reports will be exported. Once set, all exports for this document type will be saved to the selected folder.");
+        configDesc.setWrapText(true);
+        configDesc.setStyle("-fx-font-size: 11; -fx-text-fill: #475569;");
+
+        var folderBox = new HBox(10);
+        folderBox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+
+        var folderLabel = new Label("Target Folder:");
+        folderLabel.setStyle("-fx-font-size: 12; -fx-font-weight: bold;");
+
+        var folderPathField = new TextField();
+        folderPathField.setPromptText("No folder selected yet");
+        folderPathField.setEditable(false);
+        folderPathField.setPrefWidth(400);
+        folderPathField.setStyle("-fx-background-color: white;");
+        
+        // Load saved export path from preferences
+        String savedPath = DatabaseHelper.getFinancialExportPath();
+        if (savedPath != null && !savedPath.isEmpty()) {
+            folderPathField.setText(savedPath);
+        }
+
+        var browseFolderBtn = new Button("Browse Folder", new FontIcon(FontAwesomeSolid.FOLDER_OPEN));
+        browseFolderBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
+        browseFolderBtn.setOnAction(e -> {
+            javafx.stage.DirectoryChooser dirChooser = new javafx.stage.DirectoryChooser();
+            dirChooser.setTitle("Select Export Folder for Financial Reports");
+            
+            // Set initial directory if path exists
+            if (!folderPathField.getText().isEmpty()) {
+                java.io.File currentDir = new java.io.File(folderPathField.getText());
+                if (currentDir.exists()) {
+                    dirChooser.setInitialDirectory(currentDir);
+                }
+            }
+            
+            java.io.File selectedDir = dirChooser.showDialog(primaryStage);
+            if (selectedDir != null) {
+                folderPathField.setText(selectedDir.getAbsolutePath());
+                DatabaseHelper.saveFinancialExportPath(selectedDir.getAbsolutePath());
+                showToast("Export folder updated successfully");
+            }
+        });
+
+        folderBox.getChildren().addAll(folderLabel, folderPathField, browseFolderBtn);
+        exportConfigBox.getChildren().addAll(configTitle, configDesc, folderBox);
+
         // Fetch real data from database
         var dailyCollections = DatabaseHelper.getDailyCollections();
         var monthlyIncome = DatabaseHelper.getMonthlyIncome();
+        var revenueByType = DatabaseHelper.getRevenueByDocumentType();
+        var ytdSummary = DatabaseHelper.getYearToDateSummary();
+
+        // Year-to-Date Summary Cards
+        var summaryBox = new HBox(15);
+        summaryBox.setPadding(new Insets(10, 0, 10, 0));
+
+        var totalRevenueCard = createSummaryCard("Total Revenue (YTD)", 
+            "₱" + String.format("%.2f", ytdSummary.get("total_revenue")), 
+            "#10b981", FontAwesomeSolid.DOLLAR_SIGN);
+        var pendingRevenueCard = createSummaryCard("Pending Revenue", 
+            "₱" + String.format("%.2f", ytdSummary.get("pending_revenue")), 
+            "#f59e0b", FontAwesomeSolid.CLOCK);
+        var transactionsCard = createSummaryCard("Total Transactions", 
+            ytdSummary.get("total_transactions").toString(), 
+            "#3b82f6", FontAwesomeSolid.RECEIPT);
+        var paidCountCard = createSummaryCard("Paid Documents", 
+            ytdSummary.get("paid_count").toString(), 
+            "#8b5cf6", FontAwesomeSolid.CHECK_CIRCLE);
+
+        summaryBox.getChildren().addAll(totalRevenueCard, pendingRevenueCard, transactionsCard, paidCountCard);
+
+        // Revenue by Document Type Section
+        var revenueTypeSection = new VBox(10);
+        var revenueTypeTitle = new Label("Revenue by Document Type");
+        revenueTypeTitle.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + "#1a1a1a" + ";");
+
+        var revenueTypeTable = new TableView<Map.Entry<String, Double>>();
+        revenueTypeTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        revenueTypeTable.setPrefHeight(150);
+
+        TableColumn<Map.Entry<String, Double>, String> docTypeCol = new TableColumn<>("Document Type");
+        docTypeCol.setCellValueFactory(cellData -> new javafx.beans.property.SimpleStringProperty(cellData.getValue().getKey()));
+        docTypeCol.setPrefWidth(200);
+
+        TableColumn<Map.Entry<String, Double>, String> revenueCol = new TableColumn<>("Total Revenue");
+        revenueCol.setCellValueFactory(cellData -> new javafx.beans.property.SimpleStringProperty("₱" + String.format("%.2f", cellData.getValue().getValue())));
+        revenueCol.setPrefWidth(150);
+
+        @SuppressWarnings("unchecked")
+        TableColumn<Map.Entry<String, Double>, ?>[] revenueCols = new TableColumn[] {docTypeCol, revenueCol};
+        revenueTypeTable.getColumns().addAll(revenueCols);
+        revenueTypeTable.setItems(FXCollections.observableArrayList(revenueByType.entrySet()));
+
+        revenueTypeSection.getChildren().addAll(revenueTypeTitle, revenueTypeTable);
 
         // Daily Collections Section
         var dailySection = new VBox(10);
-        var dailyTitle = new Label("Daily Collections");
+        var dailyTitle = new Label("Daily Collections (Last 30 Days)");
         dailyTitle.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + "#1a1a1a" + ";");
 
         var dailyTable = new TableView<Map.Entry<String, Double>>();
@@ -3250,7 +3751,7 @@ public class App extends Application {
 
         // Monthly Income Section
         var monthlySection = new VBox(10);
-        var monthlyTitle = new Label("Monthly Income");
+        var monthlyTitle = new Label("Monthly Income (Last 12 Months)");
         monthlyTitle.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + "#1a1a1a" + ";");
 
         var monthlyTable = new TableView<Map.Entry<String, Double>>();
@@ -3287,13 +3788,17 @@ public class App extends Application {
         printMonthlyBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
         printMonthlyBtn.setOnAction(e -> generateFinancialReportPDF("monthly", monthlyIncome));
 
+        var printComprehensiveBtn = new Button("Print Comprehensive Report", new FontIcon(FontAwesomeSolid.FILE_PDF));
+        printComprehensiveBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
+        printComprehensiveBtn.setOnAction(e -> generateComprehensiveFinancialReport(dailyCollections, monthlyIncome, revenueByType, ytdSummary));
+
         var exportBtn = new Button("Export to CSV", new FontIcon(FontAwesomeSolid.FILE_CSV));
         exportBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
         exportBtn.setOnAction(e -> exportFinancialDataToCSV(dailyCollections, monthlyIncome));
 
-        buttonBox.getChildren().addAll(printDailyBtn, printMonthlyBtn, exportBtn);
+        buttonBox.getChildren().addAll(printDailyBtn, printMonthlyBtn, printComprehensiveBtn, exportBtn);
 
-        var scrollPane = new ScrollPane(new VBox(20, dailySection, monthlySection));
+        var scrollPane = new ScrollPane(new VBox(20, exportConfigBox, summaryBox, revenueTypeSection, dailySection, monthlySection));
         scrollPane.setFitToWidth(true);
 
         container.getChildren().addAll(titleLabel, scrollPane, buttonBox);
@@ -3302,10 +3807,37 @@ public class App extends Application {
         updateDashboardContent(center, "Financial Reports", container);
     }
 
+    private VBox createSummaryCard(String title, String value, String color, org.kordamp.ikonli.Ikon icon) {
+        var card = new VBox(8);
+        card.setPadding(new Insets(15));
+        card.setStyle("-fx-background-color: white; -fx-border-color: #e5e7eb; -fx-border-width: 1; -fx-border-radius: 8; -fx-background-radius: 8;");
+        card.setPrefWidth(200);
+
+        var iconLabel = new Label("", new FontIcon(icon));
+        iconLabel.setStyle("-fx-font-size: 24; -fx-text-fill: " + color + ";");
+
+        var titleLabel = new Label(title);
+        titleLabel.setStyle("-fx-font-size: 11; -fx-text-fill: #6b7280;");
+
+        var valueLabel = new Label(value);
+        valueLabel.setStyle("-fx-font-size: 18; -fx-font-weight: bold; -fx-text-fill: " + color + ";");
+
+        card.getChildren().addAll(iconLabel, titleLabel, valueLabel);
+        return card;
+    }
+
     private void generateFinancialReportPDF(String type, Map<String, Double> data) {
         try {
             String filename = "Financial_Report_" + type + "_" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + ".pdf";
-            String path = System.getProperty("user.home") + "/Downloads/" + filename;
+            
+            // Use configured export path or default to Downloads
+            String exportPath = DatabaseHelper.getFinancialExportPath();
+            String path;
+            if (exportPath != null && !exportPath.isEmpty()) {
+                path = exportPath + "/" + filename;
+            } else {
+                path = System.getProperty("user.home") + "/Downloads/" + filename;
+            }
 
             Document document = new Document();
             PdfWriter.getInstance(document, new FileOutputStream(path));
@@ -3354,10 +3886,117 @@ public class App extends Application {
         }
     }
 
+    private void generateComprehensiveFinancialReport(Map<String, Double> daily, Map<String, Double> monthly, 
+                                                      Map<String, Double> revenueByType, Map<String, Object> ytdSummary) {
+        try {
+            String filename = "Comprehensive_Financial_Report_" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + ".pdf";
+            
+            // Use configured export path or default to Downloads
+            String exportPath = DatabaseHelper.getFinancialExportPath();
+            String path;
+            if (exportPath != null && !exportPath.isEmpty()) {
+                path = exportPath + "/" + filename;
+            } else {
+                path = System.getProperty("user.home") + "/Downloads/" + filename;
+            }
+
+            Document document = new Document();
+            PdfWriter.getInstance(document, new FileOutputStream(path));
+            document.open();
+
+            // Header
+            com.lowagie.text.Font titleFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 16, com.lowagie.text.Font.BOLD);
+            Paragraph title = new Paragraph("BARANGAY SAN MARINO", titleFont);
+            title.setAlignment(com.lowagie.text.Element.ALIGN_CENTER);
+            document.add(title);
+
+            com.lowagie.text.Font subtitleFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 14, com.lowagie.text.Font.BOLD);
+            Paragraph subtitle = new Paragraph("COMPREHENSIVE FINANCIAL REPORT", subtitleFont);
+            subtitle.setAlignment(com.lowagie.text.Element.ALIGN_CENTER);
+            document.add(subtitle);
+
+            document.add(new Paragraph("Generated: " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))));
+            document.add(new Paragraph("\n"));
+
+            // Year-to-Date Summary
+            com.lowagie.text.Font sectionFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 12, com.lowagie.text.Font.BOLD);
+            document.add(new Paragraph("YEAR-TO-DATE SUMMARY", sectionFont));
+            document.add(new Paragraph("Total Revenue: ₱" + String.format("%.2f", ytdSummary.get("total_revenue"))));
+            document.add(new Paragraph("Pending Revenue: ₱" + String.format("%.2f", ytdSummary.get("pending_revenue"))));
+            document.add(new Paragraph("Total Transactions: " + ytdSummary.get("total_transactions")));
+            document.add(new Paragraph("Paid Documents: " + ytdSummary.get("paid_count")));
+            document.add(new Paragraph("Pending Documents: " + ytdSummary.get("pending_count")));
+            document.add(new Paragraph("\n"));
+
+            // Revenue by Document Type
+            document.add(new Paragraph("REVENUE BY DOCUMENT TYPE", sectionFont));
+            com.lowagie.text.pdf.PdfPTable typeTable = new com.lowagie.text.pdf.PdfPTable(2);
+            typeTable.setWidthPercentage(100);
+            typeTable.addCell("Document Type");
+            typeTable.addCell("Total Revenue (₱)");
+
+            for (Map.Entry<String, Double> entry : revenueByType.entrySet()) {
+                typeTable.addCell(entry.getKey());
+                typeTable.addCell(String.format("%.2f", entry.getValue()));
+            }
+            document.add(typeTable);
+            document.add(new Paragraph("\n"));
+
+            // Monthly Income Summary
+            document.add(new Paragraph("MONTHLY INCOME (Last 12 Months)", sectionFont));
+            double monthlyTotal = monthly.values().stream().mapToDouble(Double::doubleValue).sum();
+            document.add(new Paragraph("Total: ₱" + String.format("%.2f", monthlyTotal)));
+            document.add(new Paragraph("Average: ₱" + String.format("%.2f", monthlyTotal / monthly.size())));
+            document.add(new Paragraph("\n"));
+
+            com.lowagie.text.pdf.PdfPTable monthlyTable = new com.lowagie.text.pdf.PdfPTable(2);
+            monthlyTable.setWidthPercentage(100);
+            monthlyTable.addCell("Month");
+            monthlyTable.addCell("Income (₱)");
+
+            for (Map.Entry<String, Double> entry : monthly.entrySet()) {
+                monthlyTable.addCell(entry.getKey());
+                monthlyTable.addCell(String.format("%.2f", entry.getValue()));
+            }
+            document.add(monthlyTable);
+            document.add(new Paragraph("\n"));
+
+            // Daily Collections Summary
+            document.add(new Paragraph("DAILY COLLECTIONS (Last 30 Days)", sectionFont));
+            double dailyTotal = daily.values().stream().mapToDouble(Double::doubleValue).sum();
+            document.add(new Paragraph("Total: ₱" + String.format("%.2f", dailyTotal)));
+            document.add(new Paragraph("Average: ₱" + String.format("%.2f", dailyTotal / daily.size())));
+            document.add(new Paragraph("\n"));
+
+            // Footer
+            document.add(new Paragraph("\n\n"));
+            Paragraph footer = new Paragraph("This is a system-generated report from Barangay San Marino BDMS");
+            footer.setAlignment(com.lowagie.text.Element.ALIGN_CENTER);
+            com.lowagie.text.Font footerFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 9, com.lowagie.text.Font.ITALIC);
+            footer.setFont(footerFont);
+            document.add(footer);
+
+            document.close();
+
+            showToast("Comprehensive report saved to: " + path);
+        } catch (Exception e) {
+            e.printStackTrace();
+            showToast("Error generating comprehensive report");
+        }
+    }
+
     private void exportFinancialDataToCSV(Map<String, Double> daily, Map<String, Double> monthly) {
         try {
             String filename = "Financial_Data_" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + ".csv";
-            String path = System.getProperty("user.home") + "/Downloads/" + filename;
+            
+            // Use configured export path or default to Downloads
+            String exportPath = DatabaseHelper.getFinancialExportPath();
+            String path;
+            if (exportPath != null && !exportPath.isEmpty()) {
+                path = exportPath + "/" + filename;
+            } else {
+                path = System.getProperty("user.home") + "/Downloads/" + filename;
+            }
 
             StringBuilder csv = new StringBuilder();
             csv.append("BARANGAY SAN MARINO - FINANCIAL DATA EXPORT\n");
@@ -3390,37 +4029,30 @@ public class App extends Application {
     // ==================== SECURITY FEATURES ====================
 
     private void showSecurityFeatures(VBox center) {
-        var container = new VBox(15);
-        container.setPadding(new Insets(15));
-        container.setStyle("-fx-background-color: " + "#ffffff" + ";");
-
-        var titleLabel = new Label("Security Features");
-        titleLabel.setStyle("-fx-font-size: 16; -fx-font-weight: bold;");
-
         var tabPane = new TabPane();
         tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        tabPane.getStyleClass().add("tab-pane");
 
         // Tab 1: User Authentication
         Tab authTab = new Tab("User Authentication", createUserAuthenticationPanel());
-        authTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+        authTab.getStyleClass().add("tab");
 
         // Tab 2: Role-Based Access
         Tab rbacTab = new Tab("Role-Based Access", createRoleBasedAccessPanel());
-        rbacTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+        rbacTab.getStyleClass().add("tab");
 
         // Tab 3: Data Encryption
         Tab encryptionTab = new Tab("Data Encryption", createDataEncryptionPanel());
-        encryptionTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+        encryptionTab.getStyleClass().add("tab");
 
         // Tab 4: Automatic Backups
         Tab backupTab = new Tab("Automatic Backups", createAutomaticBackupsPanel());
-        backupTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+        backupTab.getStyleClass().add("tab");
 
         tabPane.getTabs().addAll(authTab, rbacTab, encryptionTab, backupTab);
-        container.getChildren().addAll(titleLabel, tabPane);
         VBox.setVgrow(tabPane, Priority.ALWAYS);
 
-        updateDashboardContent(center, "Security Features", container);
+        updateDashboardContent(center, "Security Features", tabPane);
     }
 
     private VBox createUserAuthenticationPanel() {
@@ -3702,16 +4334,21 @@ public class App extends Application {
         // Create tabs for document export configuration
         TabPane tabPane = new TabPane();
         tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        tabPane.getStyleClass().add("tab-pane");
 
         // Tab 1: Barangay Clearance Export
         Tab clearanceTab = new Tab("Barangay Clearance", createDocumentExportPanel("Barangay Clearance"));
-        clearanceTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+        clearanceTab.getStyleClass().add("tab");
 
         // Tab 2: Certificate of Residency Export
         Tab certificateTab = new Tab("Certificate of Residency", createDocumentExportPanel("Certificate of Residency"));
-        certificateTab.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+        certificateTab.getStyleClass().add("tab");
 
-        tabPane.getTabs().addAll(clearanceTab, certificateTab);
+        // Tab 3: Indigency Certificate Export
+        Tab indigencyTab = new Tab("Indigency Certificate", createDocumentExportPanel("Indigency Certificate"));
+        indigencyTab.getStyleClass().add("tab");
+
+        tabPane.getTabs().addAll(clearanceTab, certificateTab, indigencyTab);
         updateDashboardContent(center, "System Configuration", tabPane);
     }
 
@@ -3996,15 +4633,19 @@ public class App extends Application {
     private void showMaintenance(VBox center) {
         TabPane tabPane = new TabPane();
         tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        tabPane.getStyleClass().add("tab-pane");
 
         // Tab 1: Database Backup & Maintenance
         Tab backupTab = new Tab("Database Backup", createDatabaseBackupPanel());
+        backupTab.getStyleClass().add("tab");
         
         // Tab 2: Notifications Management
         Tab notificationsTab = new Tab("Notifications", createNotificationsManagementPanel());
+        notificationsTab.getStyleClass().add("tab");
         
         // Tab 3: System Health
         Tab healthTab = new Tab("System Health", createSystemHealthPanel());
+        healthTab.getStyleClass().add("tab");
 
         tabPane.getTabs().addAll(backupTab, notificationsTab, healthTab);
         updateDashboardContent(center, "Maintenance & Security", tabPane);
