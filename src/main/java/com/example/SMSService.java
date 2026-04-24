@@ -5,6 +5,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
@@ -217,7 +218,7 @@ public class SMSService {
             // Wait between messages to respect rate limit (except for last message)
             if (i < phoneNumbers.length - 1) {
                 try {
-                    Thread.sleep(RATE_LIMIT_SECONDS * 1000);
+                    Thread.sleep(RATE_LIMIT_SECONDS * 1000L);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     break;
@@ -319,7 +320,12 @@ public class SMSService {
         System.out.println("Request Body: " + jsonBody);
         
         // Create connection
-        URL url = new URL(urlString);
+        URL url;
+        try {
+            url = new URI(urlString).toURL();
+        } catch (Exception e) {
+            throw new Exception("Invalid URL: " + urlString, e);
+        }
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Content-Type", "application/json");

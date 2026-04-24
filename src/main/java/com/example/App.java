@@ -1,4 +1,4 @@
-﻿package com.example;
+package com.example;
 
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -80,8 +80,8 @@ public class App extends Application {
     private TableView<Announcement> announcementsTable;
     
     // Enhanced table references
-    private TableUtils.EnhancedTable<ResidentUserRow> enhancedUsersTable;
-    private TableView<ResidentUserRow> usersManagementTable;
+    private TableUtils.EnhancedTable<?> enhancedUsersTable;
+    private TableView<?> usersManagementTable;
     private TextField searchField; // Promoted to class level for access in other methods
     private Pagination pagination;
     private static final int ROWS_PER_PAGE = 15;
@@ -95,7 +95,6 @@ public class App extends Application {
 
     // Navigation state
     private Button selectedNavButton;
-    private Rectangle navIndicator;
     private VBox navMenu;
     private VBox sidebarVBox;           // reference to sidebar VBox for collapse
     private boolean sidebarCollapsed = false;
@@ -247,7 +246,9 @@ public class App extends Application {
         passwordField.getStyleClass().add("password-field");
 
         var loginButton = new Button("Login");
-        loginButton.getStyleClass().add("button-primary");
+        loginButton.setGraphic(new FontIcon(FontAwesomeSolid.SIGN_IN_ALT));
+        loginButton.getStyleClass().addAll("button-primary", "button-large");
+        loginButton.setTooltip(new Tooltip("Sign in to your account"));
         loginButton.setMaxWidth(Double.MAX_VALUE);
         
         var rememberCheckBox = new CheckBox("Remember me for 30 days");
@@ -462,15 +463,10 @@ public class App extends Application {
         navMenu = new VBox(4);
         navMenu.getStyleClass().add("sidebar-menu");
 
-        navIndicator = new Rectangle(0, 3);
-        navIndicator.getStyleClass().add("nav-indicator");
-        navIndicator.setVisible(false);
+        var menuStack = new StackPane(navMenu);
 
-        var menuStack = new StackPane(navMenu, navIndicator);
-        StackPane.setAlignment(navIndicator, Pos.BOTTOM_LEFT);
-
-        var center = new VBox(16);
-        center.setPadding(new Insets(18));
+        var center = new VBox(15); // Standardized spacing
+        center.setPadding(new Insets(20)); // Standardized padding
 
         var overviewBtn     = createSidebarButton("Analytics & Overview",       FontAwesomeSolid.CHART_PIE);
         overviewBtn.setUserData("overview");
@@ -571,7 +567,7 @@ public class App extends Application {
         sidebarVBox.setMaxWidth(SIDEBAR_EXPANDED);
 
         Platform.runLater(() -> {
-            if (selectedNavButton != null) moveSelectionIndicator(selectedNavButton);
+            // Navigation setup complete
         });
 
         root.setLeft(sidebarVBox);
@@ -617,27 +613,7 @@ public class App extends Application {
         sidebarCollapsed = !sidebarCollapsed;
         double targetWidth = sidebarCollapsed ? SIDEBAR_COLLAPSED : SIDEBAR_EXPANDED;
 
-        // Animate width
-        Timeline timeline = new Timeline(
-            new KeyFrame(Duration.millis(200),
-                new javafx.animation.KeyValue(sidebarVBox.prefWidthProperty(), targetWidth,
-                    javafx.animation.Interpolator.EASE_BOTH),
-                new javafx.animation.KeyValue(sidebarVBox.minWidthProperty(), targetWidth,
-                    javafx.animation.Interpolator.EASE_BOTH),
-                new javafx.animation.KeyValue(sidebarVBox.maxWidthProperty(), targetWidth,
-                    javafx.animation.Interpolator.EASE_BOTH)
-            )
-        );
-        timeline.play();
-
-        // Flip chevron
-        toggleIcon.setIconCode(sidebarCollapsed ? FontAwesomeSolid.CHEVRON_RIGHT : FontAwesomeSolid.CHEVRON_LEFT);
-
-        // Hide/show logo
-        topBrand.setVisible(!sidebarCollapsed);
-        topBrand.setManaged(!sidebarCollapsed);
-
-        // Show/hide button labels — use properties map to avoid corrupting userData
+        // Show/hide button labels immediately (before animation)
         for (javafx.scene.Node node : navMenu.getChildren()) {
             if (!(node instanceof Button btn) || btn.getGraphic() == null) continue;
             if (sidebarCollapsed) {
@@ -655,6 +631,48 @@ public class App extends Application {
                 btn.setTooltip(null);
             }
         }
+
+        // Force immediate layout update
+        Platform.runLater(() -> {
+            navMenu.requestLayout();
+            sidebarVBox.requestLayout();
+            navMenu.getParent().requestLayout();
+        });
+
+        // Animate width
+        Timeline timeline = new Timeline(
+            new KeyFrame(Duration.millis(200),
+                new javafx.animation.KeyValue(sidebarVBox.prefWidthProperty(), targetWidth,
+                    javafx.animation.Interpolator.EASE_BOTH),
+                new javafx.animation.KeyValue(sidebarVBox.minWidthProperty(), targetWidth,
+                    javafx.animation.Interpolator.EASE_BOTH),
+                new javafx.animation.KeyValue(sidebarVBox.maxWidthProperty(), targetWidth,
+                    javafx.animation.Interpolator.EASE_BOTH)
+            )
+        );
+        
+        // Add completion handler to ensure layout is updated after animation
+        timeline.setOnFinished(e -> {
+            Platform.runLater(() -> {
+                navMenu.requestLayout();
+                sidebarVBox.requestLayout();
+                navMenu.getParent().requestLayout();
+                
+                // Force a scene graph update
+                if (navMenu.getScene() != null) {
+                    navMenu.getScene().getRoot().requestLayout();
+                }
+            });
+        });
+        
+        timeline.play();
+
+        // Flip chevron
+        toggleIcon.setIconCode(sidebarCollapsed ? FontAwesomeSolid.CHEVRON_RIGHT : FontAwesomeSolid.CHEVRON_LEFT);
+
+        // Hide/show logo
+        topBrand.setVisible(!sidebarCollapsed);
+        topBrand.setManaged(!sidebarCollapsed);
     }
     private Button createSidebarButton(String text) {
         var button = new Button(text);
@@ -670,8 +688,6 @@ public class App extends Application {
         selectedNavButton = button;
         if (selectedNavButton != null) {
             selectedNavButton.getStyleClass().add("selected");
-            navIndicator.setVisible(true);
-            moveSelectionIndicator(button);
 
             // subtle selection animation
             var scale = new ScaleTransition(Duration.millis(150), selectedNavButton);
@@ -686,27 +702,6 @@ public class App extends Application {
 
         activeSection = (button.getUserData() instanceof String ? (String) button.getUserData() : null);
     }
-
-    private void moveSelectionIndicator(Button button) {
-        if (navIndicator == null || navMenu == null || button == null) return;
-
-        var bounds = button.getBoundsInParent();
-        var targetX = bounds.getMinX() + 16; // Adjust for padding
-        var targetY = bounds.getMaxY() - navIndicator.getHeight() - 4;
-        var targetWidth = Math.max(40, bounds.getWidth() - 32);
-
-        var translate = new TranslateTransition(Duration.millis(250), navIndicator);
-        translate.setToX(targetX);
-        translate.setToY(targetY);
-
-        var widthAnim = new javafx.animation.Timeline(
-            new javafx.animation.KeyFrame(Duration.millis(250), new javafx.animation.KeyValue(navIndicator.widthProperty(), targetWidth))
-        );
-
-        new javafx.animation.ParallelTransition(translate, widthAnim).play();
-    }
-
-
 
     private void updateDashboardContent(VBox center, String title, String body) {
         updateDashboardContent(center, title, createContentBox(title, body));
@@ -734,85 +729,107 @@ public class App extends Application {
 
     private void showOverview(VBox center) {
         // Enhanced dashboard with government-style header and improved stats
-        VBox dashboardContainer = new VBox(20);
+        VBox dashboardContainer = new VBox(15);
         dashboardContainer.setPadding(new Insets(20));
         
         // Government header
         VBox headerSection = new VBox(4);
+        headerSection.setAlignment(Pos.CENTER_LEFT);
         Label republikaLabel = new Label("REPUBLIKA NG PILIPINAS");
-        republikaLabel.getStyleClass().add("overview-republika");
+        republikaLabel.getStyleClass().add("republika-header");
         
         Label barangayLabel = new Label("BARANGAY SAN MARINO");
-        barangayLabel.getStyleClass().add("overview-barangay");
+        barangayLabel.getStyleClass().add("display-heading");
         
         Label systemLabel = new Label("Document Management System");
-        systemLabel.getStyleClass().add("overview-system");
+        systemLabel.getStyleClass().addAll("text-color-secondary", "overview-system");
         
         headerSection.getChildren().addAll(republikaLabel, barangayLabel, systemLabel);
         
-        // Enhanced statistics cards
+        // Enhanced statistics cards with better sizing
         int totalPopulation = DatabaseHelper.getResidentCount(null);
         int issuedRecords = DatabaseHelper.getIssuedDocumentsCount();
         int docRequests = DatabaseHelper.getPendingClearancesCount();
         int openComplaints = DatabaseHelper.getActiveCasesCount();
         double revenue = DatabaseHelper.getTotalRevenue();
         
-        var populationCard = createEnhancedStatCard("👥", String.format("%,d", totalPopulation), "TOTAL POPULATION", "#3b82f6");
-        var recordsCard = createEnhancedStatCard("📋", String.format("%,d", issuedRecords), "ISSUED RECORDS", "#10b981");
-        var requestsCard = createEnhancedStatCard("📄", String.valueOf(docRequests), "DOC REQUESTS", "#f59e0b");
-        var complaintsCard = createEnhancedStatCard("⚠️", String.valueOf(openComplaints), "OPEN COMPLAINTS", "#ef4444");
-        var revenueCard = createEnhancedStatCard("💰", String.format("₱%,.0f", revenue), "REVENUE (MTD)", "#8b5cf6");
+        var populationCard = createModernStatCard(String.format("%,d", totalPopulation), "TOTAL POPULATION", "#3b82f6");
+        var recordsCard = createModernStatCard(String.format("%,d", issuedRecords), "ISSUED RECORDS", "#10b981");
+        var requestsCard = createModernStatCard(String.valueOf(docRequests), "DOC REQUESTS", "#f59e0b");
+        var complaintsCard = createModernStatCard(String.valueOf(openComplaints), "OPEN COMPLAINTS", "#ef4444");
+        var revenueCard = createModernStatCard(String.format("₱%,.0f", revenue), "REVENUE (MTD)", "#8b5cf6");
         
-        var statsGrid = new HBox(16, populationCard, recordsCard, requestsCard, complaintsCard, revenueCard);
+        // Use FlowPane for responsive wrapping stat cards
+        var statsGrid = new FlowPane(8, 8);
         statsGrid.setAlignment(Pos.CENTER);
+        statsGrid.getChildren().addAll(populationCard, recordsCard, requestsCard, complaintsCard, revenueCard);
         
-        // Chart section (existing chart with better styling)
+        // Two-column layout for chart and announcements
+        var contentGrid = new HBox(20);
+        contentGrid.setAlignment(Pos.TOP_CENTER);
+        
+        // Chart section with better container
+        var chartSection = new VBox(12);
+        chartSection.getStyleClass().add("content-box");
+        chartSection.setPrefWidth(500);
+        chartSection.setMaxWidth(600);
+        HBox.setHgrow(chartSection, Priority.ALWAYS);
+        
+        var chartTitle = new Label("Resident Distribution by Age");
+        chartTitle.getStyleClass().add("section-heading");
+        
         var ageData = DatabaseHelper.getAgeDistribution();
         ObservableList<PieChart.Data> pieChartData = FXCollections.observableArrayList();
         ageData.forEach((ageGroup, count) -> pieChartData.add(new PieChart.Data(ageGroup + " (" + count + ")", count)));
 
         var distributionChart = new PieChart(pieChartData);
-        distributionChart.setTitle("Resident Distribution by Age");
-        distributionChart.setPrefSize(600, 300);
+        distributionChart.setMaxSize(450, 300);
+        distributionChart.setPrefSize(400, 280);
         distributionChart.setLegendVisible(true);
         distributionChart.setLabelsVisible(false);
         
         var chartContainer = new HBox(distributionChart);
         chartContainer.setAlignment(Pos.CENTER);
+        
+        chartSection.getChildren().addAll(chartTitle, chartContainer);
 
-        // Recent announcements (existing functionality)
+        // Recent announcements with better styling
         var announcementsSection = new VBox(12);
+        announcementsSection.getStyleClass().add("content-box");
+        announcementsSection.setPrefWidth(400);
+        announcementsSection.setMaxWidth(500);
+        HBox.setHgrow(announcementsSection, Priority.ALWAYS);
+        
         var announcementsTitle = new Label("Recent Announcements");
-        announcementsTitle.getStyleClass().add("overview-announcements-title");
+        announcementsTitle.getStyleClass().add("section-heading");
         announcementsSection.getChildren().add(announcementsTitle);
 
         ObservableList<Announcement> allAnnouncements = DatabaseHelper.getAllAnnouncements();
         allAnnouncements.stream().limit(3).forEach(announcement -> {
             var announcementItem = new HBox(12);
             announcementItem.setPadding(new Insets(12));
-            announcementItem.getStyleClass().add("card-announcement-item");
+            announcementItem.getStyleClass().add("news-card");
             announcementItem.setAlignment(Pos.TOP_LEFT);
 
             var typeBadge = new Label(announcement.getType());
             String typeColor = switch (announcement.getType()) {
-                case "Event" -> "#10b981";
-                case "Emergency Alert" -> "#ef4444";
-                case "Program" -> "#8b5cf6";
-                default -> "#6b7280";
+                case "Event" -> "badge-info";
+                case "Emergency Alert" -> "badge-error";
+                case "Program" -> "badge-gold";
+                default -> "badge-info";
             };
-            // Dynamic color badge — color value is runtime, static parts in CSS
-            typeBadge.getStyleClass().add("type-badge");
-            typeBadge.setStyle("-fx-background-color: " + typeColor + ";");
+            typeBadge.getStyleClass().addAll("badge", typeColor);
 
             var details = new VBox(4);
             HBox.setHgrow(details, Priority.ALWAYS);
             
             var title = new Label(announcement.getTitle());
-            title.getStyleClass().addAll("overview-announcement-title");
+            title.getStyleClass().add("news-card-title");
             title.setWrapText(true);
+            title.setMaxWidth(300);
 
             var meta = new Label("Posted on " + announcement.getPostedDate());
-            meta.getStyleClass().add("overview-announcement-meta");
+            meta.getStyleClass().addAll("text-color-secondary", "overview-announcement-meta");
 
             details.getChildren().addAll(title, meta);
             announcementItem.getChildren().addAll(typeBadge, details);
@@ -821,16 +838,51 @@ public class App extends Application {
 
         if (allAnnouncements.isEmpty()) {
             var noAnnouncements = new Label("No announcements yet");
-            noAnnouncements.getStyleClass().add("overview-no-announcements");
+            noAnnouncements.getStyleClass().addAll("text-color-secondary", "overview-no-announcements");
+            noAnnouncements.setPadding(new Insets(20));
             announcementsSection.getChildren().add(noAnnouncements);
         }
 
-        dashboardContainer.getChildren().addAll(headerSection, statsGrid, chartContainer, announcementsSection);
+        contentGrid.getChildren().addAll(chartSection, announcementsSection);
+        
+        dashboardContainer.getChildren().addAll(headerSection, statsGrid, contentGrid);
+        
+        // Wrap in ScrollPane for overflow handling
+        ScrollPane scrollPane = new ScrollPane(dashboardContainer);
+        scrollPane.setFitToWidth(true);
+        scrollPane.getStyleClass().add("scroll-pane-transparent");
+        scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
         
         center.getChildren().clear();
-        center.getChildren().add(dashboardContainer);
+        center.getChildren().add(scrollPane);
+        VBox.setVgrow(scrollPane, Priority.ALWAYS);
     }
     
+    private VBox createModernStatCard(String value, String title, String color) {
+        VBox card = new VBox(5);
+        card.setPadding(new Insets(10));
+        card.setPrefWidth(95);
+        card.setMinWidth(90);
+        card.setMaxWidth(100);
+        card.getStyleClass().add("stat-card");
+        
+        Label valueLabel = new Label(value);
+        valueLabel.getStyleClass().add("stat-card-value");
+        valueLabel.setStyle("-fx-text-fill: " + color + "; -fx-font-size: 20px; -fx-font-weight: 700;");
+        
+        Label titleLabel = new Label(title);
+        titleLabel.getStyleClass().add("stat-card-title");
+        titleLabel.setWrapText(true);
+        titleLabel.setTextAlignment(TextAlignment.CENTER);
+        titleLabel.setMaxWidth(80);
+        titleLabel.setStyle("-fx-font-size: 9px;");
+        
+        card.getChildren().addAll(valueLabel, titleLabel);
+        card.setAlignment(Pos.CENTER);
+        return card;
+    }
+
     private VBox createEnhancedStatCard(String icon, String value, String title, String color) {
         VBox card = new VBox(8);
         card.setPadding(new Insets(16));
@@ -1109,10 +1161,11 @@ public class App extends Application {
         
         var colorBox = new javafx.scene.layout.Region();
         colorBox.setPrefSize(12, 12);
-        colorBox.setStyle("-fx-background-color: " + color + "; -fx-background-radius: 2;");
+        colorBox.getStyleClass().add("legend-dot");
+        colorBox.setStyle("-fx-background-color: " + color + ";");
         
         var labelText = new Label(label);
-        labelText.setStyle("-fx-font-size: 10; -fx-text-fill: #666;");
+        labelText.getStyleClass().add("legend-label");
         
         box.getChildren().addAll(colorBox, labelText);
         return box;
@@ -1123,7 +1176,7 @@ public class App extends Application {
             private final ComboBox<String> comboBox = new ComboBox<>();
             {
                 comboBox.getItems().addAll("None", "View Only", "Manage", "Full Access");
-                comboBox.setStyle("-fx-font-size: 11;");
+                comboBox.getStyleClass().add("perm-combo");
             }
             @Override
             protected void updateItem(String item, boolean empty) {
@@ -1139,35 +1192,7 @@ public class App extends Application {
     }
 
     private void showAuditLog(VBox center) {
-        var table = new TableView<AuditEntry>();
-        table.getStyleClass().add("table-view");
-
-        TableColumn<AuditEntry, String> timestampCol = new TableColumn<>("Timestamp");
-        timestampCol.setCellValueFactory(new PropertyValueFactory<>("timestamp"));
-        timestampCol.setPrefWidth(180);
-
-        TableColumn<AuditEntry, String> userCol = new TableColumn<>("User");
-        userCol.setCellValueFactory(new PropertyValueFactory<>("user"));
-        userCol.setPrefWidth(120);
-
-        TableColumn<AuditEntry, String> actionCol = new TableColumn<>("Action");
-        actionCol.setCellValueFactory(new PropertyValueFactory<>("action"));
-        actionCol.setPrefWidth(250);
-
-        TableColumn<AuditEntry, String> detailsCol = new TableColumn<>("Details");
-        detailsCol.setCellValueFactory(new PropertyValueFactory<>("details"));
-        detailsCol.setPrefWidth(200);
-
-        TableColumn<AuditEntry, String> categoryCol = new TableColumn<>("Category");
-        categoryCol.setCellValueFactory(new PropertyValueFactory<>("category"));
-        categoryCol.setPrefWidth(100);
-
-        table.getColumns().setAll(List.of(timestampCol, userCol, actionCol, detailsCol, categoryCol));
-
-        // Load real audit logs from database
-        ObservableList<AuditEntry> data = DatabaseHelper.getAuditLogs();
-        table.setItems(data);
-
+        var table = createSharedAuditLogTable();
         updateDashboardContent(center, "Audit Log", table);
     }
 
@@ -1191,7 +1216,7 @@ public class App extends Application {
 
     private VBox createDocumentRequestPanel() {
         VBox panel = new VBox(15);
-        panel.setPadding(new Insets(20));
+        // No padding - center container already has 20px padding
 
         // Step 1: Select Resident with Search
         Label residentLabel = new Label("Step 1: Select Resident");
@@ -1200,7 +1225,7 @@ public class App extends Application {
         // Search field for residents
         TextField residentSearchField = new TextField();
         residentSearchField.setPromptText("Search by name or ID...");
-        residentSearchField.setStyle("-fx-font-size: 12;");
+        residentSearchField.getStyleClass().add("dialog-search-field");
         residentSearchField.setPrefWidth(300);
 
         // Load all residents
@@ -1211,7 +1236,7 @@ public class App extends Application {
         
         // ListView to show results
         ListView<Resident> residentListView = new ListView<>();
-        residentListView.setStyle("-fx-control-inner-background: #ffffff;");
+        residentListView.getStyleClass().add("dialog-list-view");
         residentListView.setPrefHeight(150);
         residentListView.setCellFactory(param -> new ListCell<Resident>() {
             @Override
@@ -1253,13 +1278,13 @@ public class App extends Application {
 
         VBox residentSearchBox = new VBox(8, residentSearchField, residentListView);
         var residentBoxLabel = new Label("Resident:");
-        residentBoxLabel.setStyle("-fx-text-fill: " + "#333" + ";");
+        residentBoxLabel.getStyleClass().add("form-label-inline");
         HBox residentBox = new HBox(10, residentBoxLabel, residentSearchBox);
         residentBox.setAlignment(Pos.TOP_LEFT);
 
         // Step 2: Select Document Type
         Label docTypeLabel = new Label("Step 2: Select Document Type");
-        docTypeLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + "#1a1a1a" + ";");
+        docTypeLabel.getStyleClass().add("step-label");
 
         ComboBox<String> docTypeCombo = new ComboBox<>();
         docTypeCombo.setItems(FXCollections.observableArrayList(
@@ -1270,7 +1295,7 @@ public class App extends Application {
         docTypeCombo.setPrefWidth(300);
 
         Label feeLabel = new Label("Fee: ₱0");
-        feeLabel.setStyle("-fx-font-size: 12; -fx-text-fill: " + "#333" + ";");
+        feeLabel.getStyleClass().add("form-hint");
         docTypeCombo.setOnAction(e -> {
             if (docTypeCombo.getValue() != null) {
                 double fee = DocumentRequest.getFeeForDocumentType(docTypeCombo.getValue());
@@ -1279,13 +1304,13 @@ public class App extends Application {
         });
 
         var docTypeBoxLabel = new Label("Document Type:");
-        docTypeBoxLabel.setStyle("-fx-text-fill: " + "#333" + ";");
+        docTypeBoxLabel.getStyleClass().add("form-label-inline");
         HBox docTypeBox = new HBox(10, docTypeBoxLabel, docTypeCombo);
         docTypeBox.setAlignment(Pos.CENTER_LEFT);
 
         // Step 3: Purpose
         Label purposeLabel = new Label("Step 3: Purpose of Request");
-        purposeLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: " + "#1a1a1a" + ";");
+        purposeLabel.getStyleClass().add("step-label");
 
         TextArea purposeArea = new TextArea();
         purposeArea.setPromptText("E.g., For loan application, for employment, for travel");
@@ -1294,6 +1319,7 @@ public class App extends Application {
 
         // Submit Button
         Button submitBtn = new Button("Submit");
+        submitBtn.setGraphic(new FontIcon(FontAwesomeSolid.PAPER_PLANE));
         submitBtn.getStyleClass().addAll("button-primary", "button-small");
         submitBtn.setTooltip(new Tooltip("Submit Request"));
         submitBtn.setDisable(true);
@@ -1350,8 +1376,8 @@ public class App extends Application {
     }
 
     private VBox createDocumentRequestsTable() {
-        VBox container = new VBox(10);
-        container.setPadding(new Insets(10));
+        VBox container = new VBox(15);
+        // No padding - center container already has 20px padding
 
         documentRequestsTable = new TableView<>();
         documentRequestsTable.getStyleClass().add("table-view");
@@ -1476,36 +1502,21 @@ public class App extends Application {
         }
     }
 
-    private void sendDocumentSMS(DocumentRequest request) {
-        // Get resident information
-        Optional<Resident> residentOpt = DatabaseHelper.getResidentById(request.getResidentId());
-        if (!residentOpt.isPresent()) {
-            showAlert("Error", "Resident not found.");
-            return;
-        }
-        
-        Resident resident = residentOpt.get();
-        String phone = resident.getPhoneNumber();
-        
+    // Generic SMS dialog method to replace duplicated SMS functionality
+    private void showSMSDialog(String recipientName, String phone, Map<String, String> templates, String contextInfo) {
         if (phone == null || phone.trim().isEmpty()) {
             showAlert("No Phone Number", "This resident doesn't have a phone number registered.");
             return;
         }
         
-        // Create SMS dialog
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.setTitle("Send SMS Notification");
-        dialog.setHeaderText("Send SMS to: " + resident.getFirstName() + " " + resident.getLastName());
+        dialog.setHeaderText("Send SMS to: " + recipientName);
         
         // Template selection
         ComboBox<String> templateCombo = new ComboBox<>();
-        templateCombo.getItems().addAll(
-            "Document Ready for Pickup",
-            "Document Approved",
-            "Document Pending",
-            "Custom Message"
-        );
-        templateCombo.setValue("Document Ready for Pickup");
+        templateCombo.getItems().addAll(templates.keySet());
+        templateCombo.setValue(templates.keySet().iterator().next());
         
         // Message area
         TextArea messageArea = new TextArea();
@@ -1518,37 +1529,7 @@ public class App extends Application {
         // Update message when template changes
         templateCombo.setOnAction(e -> {
             String template = templateCombo.getValue();
-            String message = "";
-            
-            switch (template) {
-                case "Document Ready for Pickup":
-                    message = String.format(
-                        "Good day! Your %s is now ready for pickup at Barangay San Marino. " +
-                        "Please bring a valid ID. Office hours: Mon-Fri 8AM-5PM. Thank you!",
-                        request.getDocumentType()
-                    );
-                    break;
-                case "Document Approved":
-                    message = String.format(
-                        "Your %s request has been approved. Processing time: 3-5 business days. " +
-                        "Reference: %s. Thank you!",
-                        request.getDocumentType(),
-                        request.getId()
-                    );
-                    break;
-                case "Document Pending":
-                    message = String.format(
-                        "Your %s request is being processed. Reference: %s. " +
-                        "We will notify you once it's ready. Thank you for your patience!",
-                        request.getDocumentType(),
-                        request.getId()
-                    );
-                    break;
-                case "Custom Message":
-                    message = "";
-                    break;
-            }
-            
+            String message = templates.getOrDefault(template, "");
             messageArea.setText(message);
             charCountLabel.setText("Characters: " + message.length());
         });
@@ -1560,9 +1541,11 @@ public class App extends Application {
         messageArea.textProperty().addListener((obs, old, newVal) -> {
             charCountLabel.setText("Characters: " + newVal.length());
             if (newVal.length() > 160) {
-                charCountLabel.setStyle("-fx-text-fill: orange;");
+                charCountLabel.getStyleClass().removeAll("char-count-ok");
+                charCountLabel.getStyleClass().add("char-count-warn");
             } else {
-                charCountLabel.setStyle("-fx-text-fill: black;");
+                charCountLabel.getStyleClass().removeAll("char-count-warn");
+                charCountLabel.getStyleClass().add("char-count-ok");
             }
         });
         
@@ -1571,8 +1554,7 @@ public class App extends Application {
         content.setPadding(new Insets(10));
         content.getChildren().addAll(
             new Label("Phone: " + phone),
-            new Label("Document: " + request.getDocumentType()),
-            new Label("Status: " + request.getStatus()),
+            new Label(contextInfo),
             new Separator(),
             new Label("Select Template:"),
             templateCombo,
@@ -1599,10 +1581,10 @@ public class App extends Application {
             
             if (response.isSuccess()) {
                 showAlert("SMS Sent Successfully!", 
-                    "✅ SMS sent to: " + resident.getFirstName() + " " + resident.getLastName() + "\n" +
+                    "✅ SMS sent to: " + recipientName + "\n" +
                     "📱 Phone: " + phone + "\n" +
                     "🆔 Message ID: " + response.getMessageId() + "\n\n" +
-                    "The resident should receive the SMS within 1-5 minutes.");
+                    "The recipient should receive the SMS within 1-5 minutes.");
             } else {
                 showAlert("SMS Failed", 
                     "❌ Failed to send SMS\n\n" +
@@ -1614,6 +1596,35 @@ public class App extends Application {
                     "3. You have sufficient SMS credits");
             }
         }
+    }
+
+    private void sendDocumentSMS(DocumentRequest request) {
+        Optional<Resident> residentOpt = DatabaseHelper.getResidentById(request.getResidentId());
+        if (!residentOpt.isPresent()) {
+            showAlert("Error", "Resident not found.");
+            return;
+        }
+        
+        Resident resident = residentOpt.get();
+        String recipientName = resident.getFirstName() + " " + resident.getLastName();
+        String contextInfo = "Document: " + request.getDocumentType() + "\nStatus: " + request.getStatus();
+        
+        Map<String, String> templates = new java.util.LinkedHashMap<>();
+        templates.put("Document Ready for Pickup", String.format(
+            "Good day! Your %s is now ready for pickup at Barangay San Marino. " +
+            "Please bring a valid ID. Office hours: Mon-Fri 8AM-5PM. Thank you!",
+            request.getDocumentType()));
+        templates.put("Document Approved", String.format(
+            "Your %s request has been approved. Processing time: 3-5 business days. " +
+            "Reference: %s. Thank you!",
+            request.getDocumentType(), request.getId()));
+        templates.put("Document Pending", String.format(
+            "Your %s request is being processed. Reference: %s. " +
+            "We will notify you once it's ready. Thank you for your patience!",
+            request.getDocumentType(), request.getId()));
+        templates.put("Custom Message", "");
+        
+        showSMSDialog(recipientName, resident.getPhoneNumber(), templates, contextInfo);
     }
 
     private void generateOfficialDocument(DocumentRequest request, Resident resident) {
@@ -1749,7 +1760,7 @@ public class App extends Application {
 
     private void showResidentControl(VBox center) {
         residentTable = new TableView<>();
-        residentTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        residentTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
         residentTable.setPrefHeight(500);
 
         TableColumn<Resident, String> photoCol = new TableColumn<>("Photo");
@@ -1817,7 +1828,7 @@ public class App extends Application {
                         Label label = new Label(item);
                         label.setWrapText(true);
                         label.setMaxWidth(240);
-                        label.setStyle("-fx-font-size: 13px;");
+                        label.getStyleClass().add("cell-wrap-label");
                         setGraphic(label);
                         setText(null);
                     }
@@ -1900,7 +1911,50 @@ public class App extends Application {
         exportButton.setGraphic(new FontIcon(FontAwesomeSolid.FILE_PDF));
         exportButton.getStyleClass().addAll("button-accent", "button-small");
         exportButton.setTooltip(new Tooltip("Export to PDF"));
-        exportButton.setOnAction(e -> generateResidentPdf());
+        exportButton.setOnAction(e -> {
+            // Generate residents list report using existing PDF generation infrastructure
+            try {
+                ObservableList<Resident> residents = DatabaseHelper.getResidents("", 0, Integer.MAX_VALUE, "last_name", "ASC");
+                String filename = "Residents_List_" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + ".pdf";
+                String path = System.getProperty("user.home") + "/Downloads/" + filename;
+
+                Document document = new Document();
+                PdfWriter.getInstance(document, new FileOutputStream(path));
+                document.open();
+
+                // Header
+                com.lowagie.text.Font titleFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 14, com.lowagie.text.Font.BOLD);
+                Paragraph title = new Paragraph("BARANGAY SAN MARINO - RESIDENTS LIST", titleFont);
+                title.setAlignment(com.lowagie.text.Element.ALIGN_CENTER);
+                document.add(title);
+
+                document.add(new Paragraph("\nGenerated: " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))));
+                document.add(new Paragraph("Total Residents: " + residents.size()));
+                document.add(new Paragraph("\n"));
+
+                // Residents Table
+                com.lowagie.text.pdf.PdfPTable table = new com.lowagie.text.pdf.PdfPTable(4);
+                table.setWidthPercentage(100);
+                table.addCell("Name");
+                table.addCell("Address");
+                table.addCell("Phone");
+                table.addCell("Gender");
+
+                for (Resident resident : residents) {
+                    table.addCell(resident.getFirstName() + " " + resident.getLastName());
+                    table.addCell(resident.getAddress());
+                    table.addCell(resident.getPhoneNumber() != null ? resident.getPhoneNumber() : "N/A");
+                    table.addCell(resident.getGender());
+                }
+
+                document.add(table);
+                document.close();
+                showToast("Residents list exported to: " + path);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                showToast("Error generating residents list");
+            }
+        });
 
         editButton.setDisable(true);
         deleteButton.setDisable(true);
@@ -2040,8 +2094,8 @@ public class App extends Application {
         );
 
         // Create main content with enhanced table
-        VBox content = new VBox(24);
-        content.setPadding(new Insets(28));
+        VBox content = new VBox(15); // Standardized spacing
+        content.setPadding(new Insets(20)); // Standardized padding
         
         Label title = new Label("Resident & Data Control");
         title.getStyleClass().add("text-heading-lg");
@@ -2060,28 +2114,7 @@ public class App extends Application {
         residentData.addAll(allResidents);
     }
 
-    private void generateResidentPdf() {
-        Document document = new Document();
-        try {
-            String path = System.getProperty("user.home") + "/Downloads/Resident_List.pdf";
-            PdfWriter.getInstance(document, new FileOutputStream(path));
-            document.open();
-            document.add(new Paragraph("Barangay Resident List"));
-            document.add(new Paragraph("Generated on: " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))));
-            document.add(new Paragraph(" ")); // Spacer
-            
-            // In a real app, you would loop through resident data from the database
-            document.add(new Paragraph("1. Juan Dela Cruz - Purok 1, Barangay San Marino"));
-            document.add(new Paragraph("2. Maria Clara - Purok 2, Barangay San Marino"));
-            document.add(new Paragraph("3. Jose Rizal - Purok 1, Barangay San Marino"));
-            
-            document.close();
-            showToast("PDF generated successfully at: " + path);
-        } catch (DocumentException | IOException e) {
-            e.printStackTrace();
-            showAlert("Error", "Failed to generate PDF.");
-        }
-    }
+    // Removed duplicate generateResidentPdf() method - functionality consolidated into generateOfficialDocument()
 
     private void generateResidentIDCard(Resident resident) {
         // ID-1 Card Size (approx 242x153 points)
@@ -2165,6 +2198,9 @@ public class App extends Application {
         photoPreview.getStyleClass().add("image-preview-frame");
         
         Button uploadBtn = new Button("Upload Photo");
+        uploadBtn.setGraphic(new FontIcon(FontAwesomeSolid.UPLOAD));
+        uploadBtn.getStyleClass().addAll("button-secondary", "button-small");
+        uploadBtn.setTooltip(new Tooltip("Upload resident photo"));
         TextField imagePathField = new TextField();
         imagePathField.setEditable(false);
         
@@ -2337,10 +2373,10 @@ public class App extends Application {
         HBox header = new HBox(15);
         header.setPadding(new Insets(15));
         header.setAlignment(Pos.CENTER_LEFT);
-        header.setStyle("-fx-background-color: linear-gradient(to right, #1e3a8a, #3b82f6); -fx-background-radius: 15 15 0 0;");
+        header.getStyleClass().add("id-card-header");
         
         Label govTitle = new Label("REPUBLIC OF THE PHILIPPINES\nBarangay San Marino Resident ID");
-        govTitle.setStyle("-fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 14;");
+        govTitle.getStyleClass().add("id-card-title");
         header.getChildren().add(govTitle);
 
         // Body Content
@@ -2365,7 +2401,7 @@ public class App extends Application {
                 photo.setImage(new Image(placeholderUrl.toExternalForm()));
             }
         }
-        photo.setStyle("-fx-border-color: #1e3a8a; -fx-border-width: 2;");
+        photo.getStyleClass().add("id-card-photo");
 
         // Details
         VBox details = new VBox(8);
@@ -2374,7 +2410,7 @@ public class App extends Application {
         nameLbl.getStyleClass().add("text-heading-sm");
         
         Label idLbl = new Label("ID: " + resident.getId());
-        idLbl.setStyle("-fx-font-size: 11; -fx-font-weight: bold;");
+        idLbl.getStyleClass().add("id-card-field");
         Label genderLbl = new Label("Gender: " + resident.getGender());
         Label dobLbl = new Label("Birthdate: " + resident.getBirthDate());
         Label addrLbl = new Label("Address: " + resident.getAddress());
@@ -2396,7 +2432,7 @@ public class App extends Application {
             qrView.setFitHeight(90);
             qrBox.getChildren().add(qrView);
             Label idLabel = new Label("ID: " + resident.getId());
-            idLabel.setStyle("-fx-font-family: monospace; -fx-font-size: 10;");
+            idLabel.getStyleClass().add("id-card-qr-label");
             qrBox.getChildren().add(idLabel);
         } catch (Exception ignored) {}
 
@@ -2635,9 +2671,9 @@ public class App extends Application {
 
     private VBox createContentBox(String title, String body) {
         var heading = new Label(title);
-        heading.setStyle("-fx-text-fill: " + "#1a1a1a" + "; -fx-font-size: 16; -fx-font-weight: bold;");
+        heading.getStyleClass().add("content-box-heading");
         var content = new Label(body);
-        content.setStyle("-fx-text-fill: " + "#333" + "; -fx-font-size: 12;");
+        content.getStyleClass().add("content-box-body-text");
         var box = new VBox(10, heading, content);
         box.getStyleClass().add("content-box");
         return box;
@@ -2686,7 +2722,7 @@ public class App extends Application {
         // If no tabs are available (shouldn't happen if menu is hidden), show message
         if (tabPane.getTabs().isEmpty()) {
             Label noAccessLabel = new Label("You do not have permission to access this section.");
-            noAccessLabel.setStyle("-fx-font-size: 14; -fx-text-fill: #666; -fx-padding: 20;");
+            noAccessLabel.getStyleClass().add("no-access-label");
             VBox messageBox = new VBox(noAccessLabel);
             messageBox.setAlignment(javafx.geometry.Pos.CENTER);
             messageBox.setPadding(new Insets(50));
@@ -2697,30 +2733,36 @@ public class App extends Application {
     }
 
     private VBox createManageUsersPanel() {
-        VBox panel = new VBox(12);
-        panel.setPadding(new Insets(20));
+        VBox panel = new VBox(15);
+        // No padding - center container already has 20px padding
 
         // Header
         Label title = new Label("User Management");
         title.getStyleClass().add("text-heading");
 
-        Label subtitle = new Label("All residents are listed below. Assign or change roles to grant system access.");
+        Label subtitle = new Label("Manage system user accounts for officials and staff.");
         subtitle.getStyleClass().add("text-muted");
 
         VBox header = new VBox(4, title, subtitle);
 
-        // Build the unified table
-        TableView<ResidentUserRow> table = createResidentUserTable();
-        ObservableList<ResidentUserRow> data = DatabaseHelper.getAllResidentsWithAccountInfo();
+        // Build simple users table (officials only)
+        TableView<User> table = createSimpleUsersTable();
+        ObservableList<User> data = DatabaseHelper.getAllUsers();
 
-        TableUtils.EnhancedTable<ResidentUserRow> enhancedTable = TableUtils.createEnhancedTable(table, data);
-        enhancedTable.setGlobalFilter(row ->
-            row.getFullName() + " " + row.getPhoneNumber() + " " + row.getAddress() +
-            " " + row.getRole() + " " + row.getUsername() +
-            " " + (row.hasAccount() ? "has account active" : "no account")
-        );
+        TableUtils.EnhancedTable<User> enhancedTable = TableUtils.createEnhancedTable(table, data);
+        enhancedTable.setGlobalFilter(user -> {
+            // Get resident name if linked
+            String residentName = "";
+            if (user.getResidentId() > 0) {
+                Resident resident = DatabaseHelper.getResidentForUser(user.getId());
+                if (resident != null) {
+                    residentName = resident.getFirstName() + " " + resident.getLastName();
+                }
+            }
+            return residentName + " " + user.getUsername() + " " + user.getRole();
+        });
 
-        this.usersManagementTable = table;
+        this.usersManagementTable = null; // Clear old reference
         this.enhancedUsersTable = enhancedTable;
 
         panel.getChildren().addAll(header, enhancedTable.getContainer());
@@ -2728,124 +2770,100 @@ public class App extends Application {
         return panel;
     }
 
-    private TableView<ResidentUserRow> createResidentUserTable() {
-        TableView<ResidentUserRow> table = new TableView<>();
+    @SuppressWarnings("unchecked")
+    private TableView<User> createSimpleUsersTable() {
+        TableView<User> table = new TableView<>();
         table.getStyleClass().add("table-view");
         table.setPrefHeight(500);
         table.setColumnResizePolicy(TableView.UNCONSTRAINED_RESIZE_POLICY);
         table.setRowFactory(tv -> {
-            TableRow<ResidentUserRow> row = new TableRow<>();
+            TableRow<User> row = new TableRow<>();
             row.setPrefHeight(38);
             return row;
         });
 
-        // --- Name ---
-        TableColumn<ResidentUserRow, String> nameCol = new TableColumn<>("Full Name");
-        nameCol.setCellValueFactory(new PropertyValueFactory<>("fullName"));
-        nameCol.setPrefWidth(180);
+        // --- Full Name (from linked resident) ---
+        TableColumn<User, String> nameCol = new TableColumn<>("Full Name");
+        nameCol.setPrefWidth(200);
         nameCol.setMinWidth(150);
+        nameCol.setCellValueFactory(cellData -> {
+            User user = cellData.getValue();
+            if (user.getResidentId() > 0) {
+                Resident resident = DatabaseHelper.getResidentForUser(user.getId());
+                if (resident != null) {
+                    return new javafx.beans.property.SimpleStringProperty(
+                        resident.getFirstName() + " " + resident.getLastName()
+                    );
+                }
+            }
+            return new javafx.beans.property.SimpleStringProperty("—");
+        });
 
-        // --- Phone ---
-        TableColumn<ResidentUserRow, String> phoneCol = new TableColumn<>("Phone");
-        phoneCol.setCellValueFactory(new PropertyValueFactory<>("phoneNumber"));
-        phoneCol.setPrefWidth(120);
-        phoneCol.setMinWidth(100);
+        // --- Username ---
+        TableColumn<User, String> usernameCol = new TableColumn<>("Username");
+        usernameCol.setCellValueFactory(new PropertyValueFactory<>("username"));
+        usernameCol.setPrefWidth(150);
+        usernameCol.setMinWidth(120);
 
-        // --- Address ---
-        TableColumn<ResidentUserRow, String> addressCol = new TableColumn<>("Address");
-        addressCol.setCellValueFactory(new PropertyValueFactory<>("address"));
-        addressCol.setPrefWidth(200);
-        addressCol.setMinWidth(150);
+        // --- Password (Action Button) ---
+        TableColumn<User, Void> passwordCol = new TableColumn<>("Password");
+        passwordCol.setPrefWidth(120);
+        passwordCol.setMinWidth(100);
+        passwordCol.setSortable(false);
+        passwordCol.setCellFactory(col -> new TableCell<User, Void>() {
+            private final Button resetBtn = new Button("Reset", new FontIcon(FontAwesomeSolid.KEY));
+            {
+                resetBtn.getStyleClass().addAll("button-secondary", "button-small");
+                resetBtn.setTooltip(new Tooltip("Reset Password"));
+                resetBtn.setOnAction(e -> {
+                    User user = getTableView().getItems().get(getIndex());
+                    showResetPasswordDialogForUser(user);
+                });
+            }
 
-        // --- Account Status badge ---
-        TableColumn<ResidentUserRow, Boolean> statusCol = new TableColumn<>("Account");
-        statusCol.setCellValueFactory(new PropertyValueFactory<>("hasAccount"));
-        statusCol.setPrefWidth(100);
-        statusCol.setMinWidth(90);
-        statusCol.setCellFactory(col -> new TableCell<ResidentUserRow, Boolean>() {
             @Override
-            protected void updateItem(Boolean has, boolean empty) {
-                super.updateItem(has, empty);
-                if (empty || has == null) { setGraphic(null); return; }
-                Label badge = new Label(has ? "Has Account" : "No Account");
-                badge.setStyle(has
-                    ? "-fx-background-color:#d1fae5;-fx-text-fill:#065f46;-fx-padding:3 8;-fx-background-radius:10;-fx-font-size:11px;-fx-font-weight:700;"
-                    : "-fx-background-color:#f3f4f6;-fx-text-fill:#6b7280;-fx-padding:3 8;-fx-background-radius:10;-fx-font-size:11px;-fx-font-weight:700;");
-                setGraphic(badge);
+            protected void updateItem(Void item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty) {
+                    setGraphic(null);
+                } else {
+                    setGraphic(resetBtn);
+                }
                 setText(null);
             }
         });
 
-        // --- Username ---
-        TableColumn<ResidentUserRow, String> usernameCol = new TableColumn<>("Username");
-        usernameCol.setCellValueFactory(new PropertyValueFactory<>("username"));
-        usernameCol.setPrefWidth(130);
-        usernameCol.setMinWidth(100);
-        usernameCol.setCellFactory(col -> new TableCell<ResidentUserRow, String>() {
-            @Override
-            protected void updateItem(String val, boolean empty) {
-                super.updateItem(val, empty);
-                if (empty) { setText(null); return; }
-                setText(val != null && !val.isEmpty() ? val : "—");
-                setStyle(val == null || val.isEmpty() ? "-fx-text-fill:#9ca3af;" : "");
-            }
-        });
-
-        // --- Role (inline ComboBox) ---
-        TableColumn<ResidentUserRow, String> roleCol = new TableColumn<>("Role");
+        // --- Role (ComboBox) ---
+        TableColumn<User, String> roleCol = new TableColumn<>("Role");
         roleCol.setCellValueFactory(new PropertyValueFactory<>("role"));
         roleCol.setPrefWidth(200);
         roleCol.setMinWidth(170);
-        roleCol.setCellFactory(col -> new TableCell<ResidentUserRow, String>() {
+        roleCol.setCellFactory(col -> new TableCell<User, String>() {
             private final ComboBox<String> combo = new ComboBox<>();
+            private boolean isUpdating = false;
+            
             {
-                combo.setPromptText("Assign role...");
                 combo.setPrefWidth(185);
-                combo.setStyle("-fx-font-size:12px;");
+                combo.getStyleClass().add("role-combo");
                 // Populate roles
-                combo.getItems().add("— No Role —");
-                for (Role r : DatabaseHelper.getAllRoles()) combo.getItems().add(r.getName());
+                for (Role r : DatabaseHelper.getAllRoles()) {
+                    combo.getItems().add(r.getName());
+                }
 
                 combo.setOnAction(e -> {
-                    ResidentUserRow row = getTableView().getItems().get(getIndex());
+                    if (isUpdating) return;
+                    
+                    User user = getTableView().getItems().get(getIndex());
                     String selected = combo.getValue();
                     if (selected == null) return;
-                    if ("— No Role —".equals(selected)) {
-                        // Remove account
-                        if (row.hasAccount()) {
-                            Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
-                                "Remove system access for " + row.getFullName() + "?",
-                                ButtonType.YES, ButtonType.NO);
-                            confirm.setTitle("Remove Role");
-                            confirm.showAndWait().ifPresent(btn -> {
-                                if (btn == ButtonType.YES) {
-                                    DatabaseHelper.removeRoleFromResident(row.getResidentId());
-                                    row.setUserId(0);
-                                    row.setRole("");
-                                    row.setUsername("");
-                                    getTableView().refresh();
-                                    showToast("Access removed for " + row.getFullName());
-                                }
-                            });
-                        }
-                    } else {
-                        // Assign / change role
-                        String username = DatabaseHelper.assignRoleToResident(row.getResidentId(), selected);
-                        if (username != null) {
-                            User updated = DatabaseHelper.getUserByUsername(username);
-                            if (updated != null) {
-                                row.setUserId(updated.getId());
-                                row.setUsername(updated.getUsername());
-                            }
-                            row.setRole(selected);
-                            getTableView().refresh();
-                            String msg = row.hasAccount()
-                                ? "Role updated to " + selected + " for " + row.getFullName()
-                                : "Account created for " + row.getFullName() + " (user: " + username + ", temp password: bdms@" + row.getResidentId() + ")";
-                            showToast(msg);
-                        } else {
-                            showToast("Failed to assign role.");
-                        }
+                    
+                    String previousRole = user.getRole();
+                    if (!selected.equals(previousRole)) {
+                        // Update role
+                        DatabaseHelper.updateUser(user.getId(), user.getUsername(), selected, user.isActive());
+                        user.setRole(selected);
+                        getTableView().refresh();
+                        showToast("Role updated to " + selected + " for " + user.getUsername());
                     }
                 });
             }
@@ -2853,38 +2871,85 @@ public class App extends Application {
             @Override
             protected void updateItem(String role, boolean empty) {
                 super.updateItem(role, empty);
-                if (empty) { setGraphic(null); return; }
-                ResidentUserRow row = getTableView().getItems().get(getIndex());
-                String current = row.getRole();
-                if (current != null && !current.isEmpty()) {
-                    combo.setValue(current);
-                } else {
-                    combo.setValue(null);
+                if (empty) {
+                    setGraphic(null);
+                    return;
                 }
+                
+                User user = getTableView().getItems().get(getIndex());
+                isUpdating = true;
+                combo.setValue(user.getRole());
+                isUpdating = false;
+                
                 setGraphic(combo);
                 setText(null);
             }
         });
 
         // --- Last Login ---
-        TableColumn<ResidentUserRow, String> loginCol = new TableColumn<>("Last Login");
+        TableColumn<User, String> loginCol = new TableColumn<>("Last Login");
         loginCol.setCellValueFactory(new PropertyValueFactory<>("lastLogin"));
         loginCol.setPrefWidth(140);
         loginCol.setMinWidth(120);
-        loginCol.setCellFactory(col -> new TableCell<ResidentUserRow, String>() {
+        loginCol.setCellFactory(col -> new TableCell<User, String>() {
             @Override
             protected void updateItem(String val, boolean empty) {
                 super.updateItem(val, empty);
-                if (empty) { setText(null); return; }
-                setText(val != null && !val.isEmpty() && !"Never".equals(val) ? val : "—");
-                setStyle("Never".equals(val) || val == null || val.isEmpty() ? "-fx-text-fill:#9ca3af;" : "");
+                if (empty) {
+                    setText(null);
+                    return;
+                }
+                setText(val != null && !val.isEmpty() ? val : "—");
+                setStyle(val == null || val.isEmpty() ? "-fx-text-fill:#9ca3af;" : "");
             }
         });
 
-        table.getColumns().addAll(nameCol, phoneCol, addressCol, statusCol, usernameCol, roleCol, loginCol);
+        // --- Actions (Edit/Delete) ---
+        TableColumn<User, Void> actionsCol = new TableColumn<>("Actions");
+        actionsCol.setPrefWidth(100);
+        actionsCol.setMinWidth(90);
+        actionsCol.setSortable(false);
+        actionsCol.setCellFactory(col -> new TableCell<User, Void>() {
+            private final Button editBtn = new Button("", new FontIcon(FontAwesomeSolid.EDIT));
+            private final Button deleteBtn = new Button("", new FontIcon(FontAwesomeSolid.TRASH));
+            private final HBox actionBox = new HBox(4, editBtn, deleteBtn);
+
+            {
+                editBtn.getStyleClass().addAll("button-icon", "button-small");
+                editBtn.setTooltip(new Tooltip("Edit User"));
+                editBtn.setOnAction(e -> {
+                    User user = getTableView().getItems().get(getIndex());
+                    showEditUserDialog(user);
+                });
+
+                deleteBtn.getStyleClass().addAll("button-icon-danger", "button-small");
+                deleteBtn.setTooltip(new Tooltip("Delete User"));
+                deleteBtn.setOnAction(e -> {
+                    User user = getTableView().getItems().get(getIndex());
+                    showDeleteUserConfirmation(user);
+                });
+            }
+
+            @Override
+            protected void updateItem(Void item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty) {
+                    setGraphic(null);
+                } else {
+                    User user = getTableView().getItems().get(getIndex());
+                    // Disable delete for current user
+                    deleteBtn.setDisable(user.getUsername().equals(currentUsername));
+                    setGraphic(actionBox);
+                }
+                setText(null);
+            }
+        });
+
+        table.getColumns().addAll(nameCol, usernameCol, passwordCol, roleCol, loginCol, actionsCol);
         return table;
     }
 
+    @SuppressWarnings("unchecked")
     private TableView<User> createUsersTable() {
 
 
@@ -2957,7 +3022,7 @@ public class App extends Application {
                         Label label = new Label(item);
                         label.setWrapText(true);
                         label.setMaxWidth(180);
-                        label.setStyle("-fx-font-size: 12px;");
+                        label.getStyleClass().add("cell-wrap-label");
                         setGraphic(label);
                         setText(null);
                     }
@@ -2994,8 +3059,7 @@ public class App extends Application {
                     setGraphic(null);
                 } else {
                     Label badge = new Label(isActive ? "Active" : "Inactive");
-                    badge.setStyle("-fx-background-color: " + (isActive ? "#10b981" : "#ef4444") + 
-                        "; -fx-text-fill: white; -fx-padding: 4 8; -fx-border-radius: 12; -fx-background-radius: 12; -fx-font-size: 11px;");
+                    badge.getStyleClass().add(isActive ? "badge-active" : "badge-inactive");
                     setGraphic(badge);
                 }
             }
@@ -3056,7 +3120,8 @@ public class App extends Application {
             }
         });
 
-        usersTable.getColumns().addAll(idCol, usernameCol, residentNameCol, residentInfoCol, roleCol, createdCol, lastLoginCol, statusCol, actionsCol);
+        var userColumns = usersTable.getColumns();
+        userColumns.addAll(idCol, usernameCol, residentNameCol, residentInfoCol, roleCol, createdCol, lastLoginCol, statusCol, actionsCol);
 
         // Standard row height — no text wrapping needed
         usersTable.setRowFactory(tv -> {
@@ -3072,9 +3137,10 @@ public class App extends Application {
         // No-op: filtering is handled by the global search in EnhancedTable
     }
 
+    @SuppressWarnings("unchecked")
     private void refreshUsersManagementTable() {
         if (enhancedUsersTable != null) {
-            enhancedUsersTable.refreshData(DatabaseHelper.getAllResidentsWithAccountInfo());
+            ((TableUtils.EnhancedTable<User>) enhancedUsersTable).refreshData(DatabaseHelper.getAllUsers());
         }
     }
 
@@ -3154,6 +3220,91 @@ public class App extends Application {
                 refreshUsersManagementTable();
             } else {
                 showToast("Failed to create user. Username may already exist.");
+            }
+        });
+    }
+
+    private void showResetPasswordDialogForUser(User user) {
+        Dialog<String> dialog = new Dialog<>();
+        dialog.setTitle("Reset Password");
+        
+        // Get resident name if linked
+        final String displayName;
+        if (user.getResidentId() > 0) {
+            Resident resident = DatabaseHelper.getResidentForUser(user.getId());
+            if (resident != null) {
+                displayName = resident.getFirstName() + " " + resident.getLastName();
+            } else {
+                displayName = user.getUsername();
+            }
+        } else {
+            displayName = user.getUsername();
+        }
+        
+        dialog.setHeaderText("Reset password for: " + displayName);
+
+        ButtonType resetButtonType = new ButtonType("Reset", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(resetButtonType, ButtonType.CANCEL);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(20));
+
+        Label usernameLabel = new Label("Username:");
+        Label usernameValue = new Label(user.getUsername());
+        usernameValue.getStyleClass().add("text-bold");
+
+        Label newPasswordLabel = new Label("New Password:");
+        PasswordField newPasswordField = new PasswordField();
+        newPasswordField.setPromptText("Enter new password");
+        newPasswordField.getStyleClass().add("text-field");
+
+        Label confirmPasswordLabel = new Label("Confirm Password:");
+        PasswordField confirmPasswordField = new PasswordField();
+        confirmPasswordField.setPromptText("Confirm new password");
+        confirmPasswordField.getStyleClass().add("text-field");
+
+        Label infoLabel = new Label("Password must be at least 6 characters long.");
+        infoLabel.setStyle("-fx-text-fill: #64748b; -fx-font-size: 11px;");
+
+        grid.add(usernameLabel, 0, 0);
+        grid.add(usernameValue, 1, 0);
+        grid.add(newPasswordLabel, 0, 1);
+        grid.add(newPasswordField, 1, 1);
+        grid.add(confirmPasswordLabel, 0, 2);
+        grid.add(confirmPasswordField, 1, 2);
+        grid.add(infoLabel, 1, 3);
+
+        dialog.getDialogPane().setContent(grid);
+
+        // Validation
+        Node resetButton = dialog.getDialogPane().lookupButton(resetButtonType);
+        resetButton.setDisable(true);
+
+        newPasswordField.textProperty().addListener((obs, oldVal, newVal) -> {
+            boolean valid = newVal.length() >= 6 && newVal.equals(confirmPasswordField.getText());
+            resetButton.setDisable(!valid);
+        });
+
+        confirmPasswordField.textProperty().addListener((obs, oldVal, newVal) -> {
+            boolean valid = newVal.length() >= 6 && newVal.equals(newPasswordField.getText());
+            resetButton.setDisable(!valid);
+        });
+
+        dialog.setResultConverter(dialogButton -> {
+            if (dialogButton == resetButtonType) {
+                return newPasswordField.getText();
+            }
+            return null;
+        });
+
+        dialog.showAndWait().ifPresent(newPassword -> {
+            boolean success = DatabaseHelper.changeUserPassword(user.getUsername(), newPassword);
+            if (success) {
+                showToast("✓ Password reset successfully for " + displayName);
+            } else {
+                showToast("❌ Failed to reset password. Please try again.");
             }
         });
     }
@@ -3269,6 +3420,7 @@ public class App extends Application {
         });
     }
 
+    @SuppressWarnings("unchecked")
     private void showPromoteResidentDialog() {
         Dialog<Resident> dialog = new Dialog<>();
         dialog.setTitle("Promote Resident to User");
@@ -3310,7 +3462,8 @@ public class App extends Application {
         phoneCol.setPrefWidth(120);
         phoneCol.setCellValueFactory(new PropertyValueFactory<>("phoneNumber"));
 
-        residentsTable.getColumns().addAll(nameCol, addressCol, phoneCol);
+        var residentColumns = residentsTable.getColumns();
+        residentColumns.addAll(nameCol, addressCol, phoneCol);
 
         // Load residents without accounts
         ObservableList<Resident> residentsWithoutAccounts = DatabaseHelper.getResidentsWithoutAccounts();
@@ -3424,6 +3577,7 @@ public class App extends Application {
         });
     }
 
+    @SuppressWarnings("unchecked")
     private void showResidentsAccountStatusDialog() {
         Dialog<Void> dialog = new Dialog<>();
         dialog.setTitle("Residents Account Status");
@@ -3445,8 +3599,16 @@ public class App extends Application {
         // Filter buttons
         HBox filterBox = new HBox(10);
         Button showAllBtn = new Button("All");
+        showAllBtn.setGraphic(new FontIcon(FontAwesomeSolid.LIST));
+        showAllBtn.setTooltip(new Tooltip("Show all residents"));
+        
         Button showWithAccountsBtn = new Button("With Accounts");
+        showWithAccountsBtn.setGraphic(new FontIcon(FontAwesomeSolid.USER_CHECK));
+        showWithAccountsBtn.setTooltip(new Tooltip("Show residents with accounts"));
+        
         Button showWithoutAccountsBtn = new Button("No Accounts");
+        showWithoutAccountsBtn.setGraphic(new FontIcon(FontAwesomeSolid.USER_TIMES));
+        showWithoutAccountsBtn.setTooltip(new Tooltip("Show residents without accounts"));
         
         showAllBtn.getStyleClass().addAll("button-primary", "button-small");
         showWithAccountsBtn.getStyleClass().addAll("button-secondary", "button-small");
@@ -3537,7 +3699,8 @@ public class App extends Application {
             }
         });
 
-        residentsTable.getColumns().addAll(nameCol, addressCol, phoneCol, accountStatusCol, actionsCol);
+        var residentTableColumns = residentsTable.getColumns();
+        residentTableColumns.addAll(nameCol, addressCol, phoneCol, accountStatusCol, actionsCol);
 
         // Create enhanced table for residents
         ObservableList<Resident> allResidents = DatabaseHelper.getResidents("", 0, 1000, "last_name", "ASC");
@@ -3671,6 +3834,91 @@ public class App extends Application {
         });
     }
 
+    private void showEditResidentUserDialog(ResidentUserRow row) {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Edit User Account");
+        dialog.setHeaderText("Edit account for: " + row.getFullName());
+
+        ButtonType saveButtonType = new ButtonType("Save Changes", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(12);
+        grid.setVgap(12);
+        grid.setPadding(new Insets(20));
+
+        TextField usernameField = new TextField(row.getUsername());
+        usernameField.setPromptText("Username");
+        usernameField.setPrefWidth(250);
+
+        ComboBox<String> roleCombo = new ComboBox<>();
+        roleCombo.getItems().add("Resident");
+        for (Role r : DatabaseHelper.getAllRoles()) {
+            if (!"Resident".equals(r.getName())) {
+                roleCombo.getItems().add(r.getName());
+            }
+        }
+        roleCombo.setValue(row.getRole());
+        roleCombo.setPrefWidth(250);
+
+        PasswordField newPasswordField = new PasswordField();
+        newPasswordField.setPromptText("New Password (leave empty to keep current)");
+        newPasswordField.setPrefWidth(250);
+
+        PasswordField confirmPasswordField = new PasswordField();
+        confirmPasswordField.setPromptText("Confirm New Password");
+        confirmPasswordField.setPrefWidth(250);
+
+        Label passwordNote = new Label("Leave password fields empty to keep current password");
+        passwordNote.getStyleClass().add("text-muted-sm");
+
+        grid.add(new Label("Username:"), 0, 0);
+        grid.add(usernameField, 1, 0);
+        grid.add(new Label("Role:"), 0, 1);
+        grid.add(roleCombo, 1, 1);
+        grid.add(new Label("New Password:"), 0, 2);
+        grid.add(newPasswordField, 1, 2);
+        grid.add(new Label("Confirm Password:"), 0, 3);
+        grid.add(confirmPasswordField, 1, 3);
+        grid.add(passwordNote, 1, 4);
+
+        dialog.getDialogPane().setContent(grid);
+
+        // Validation
+        Node saveButton = dialog.getDialogPane().lookupButton(saveButtonType);
+        Runnable validateInput = () -> {
+            boolean passwordsMatch = newPasswordField.getText().equals(confirmPasswordField.getText());
+            boolean usernameValid = !usernameField.getText().trim().isEmpty();
+            boolean roleValid = roleCombo.getValue() != null;
+            saveButton.setDisable(!usernameValid || !roleValid || !passwordsMatch);
+        };
+
+        usernameField.textProperty().addListener((obs, old, text) -> validateInput.run());
+        roleCombo.valueProperty().addListener((obs, old, role) -> validateInput.run());
+        newPasswordField.textProperty().addListener((obs, old, text) -> validateInput.run());
+        confirmPasswordField.textProperty().addListener((obs, old, text) -> validateInput.run());
+
+        dialog.showAndWait().ifPresent(response -> {
+            if (response == saveButtonType) {
+                // Update user
+                boolean success = DatabaseHelper.updateUser(row.getUserId(), usernameField.getText().trim(), 
+                                                           roleCombo.getValue(), true);
+                
+                // Update password if provided
+                if (!newPasswordField.getText().isEmpty()) {
+                    DatabaseHelper.changeUserPassword(usernameField.getText().trim(), newPasswordField.getText());
+                }
+                
+                if (success) {
+                    showToast("User account updated successfully");
+                    refreshUsersManagementTable();
+                } else {
+                    showToast("Failed to update user account");
+                }
+            }
+        });
+    }
+
     private VBox createManageRolesPanel() {
         // Get user permissions
         Map<String, String> userPermissions = DatabaseHelper.getPermissions(currentRole);
@@ -3770,7 +4018,7 @@ public class App extends Application {
         if (!canManage) {
             // Add read-only notice for view-only users
             Label readOnlyLabel = new Label("ℹ️ View Only Mode - You cannot add, edit, or delete roles");
-            readOnlyLabel.setStyle("-fx-font-size: 11; -fx-text-fill: #f59e0b; -fx-padding: 5 0 5 0; -fx-font-weight: bold;");
+            readOnlyLabel.getStyleClass().add("view-only-notice");
             content = new VBox(12, readOnlyLabel, toolBar, rolesTable);
         } else {
             content = new VBox(12, toolBar, rolesTable);
@@ -3879,7 +4127,7 @@ public class App extends Application {
         permissionsTable.setItems(permissionsData);
 
         var infoLabel = new Label("Permission Levels: None, View Only, Manage, Full Access");
-        infoLabel.setStyle("-fx-font-size: 11; -fx-text-fill: " + "#333" + "; -fx-font-weight: bold;");
+        infoLabel.getStyleClass().add("perm-info-label");
 
         var legendBox = new HBox(15);
         legendBox.setPadding(new Insets(10, 0, 10, 0));
@@ -4019,6 +4267,17 @@ public class App extends Application {
     }
 
     private VBox createAuditLogPanel() {
+        // Use shared audit log table creation method
+        var table = createSharedAuditLogTable();
+        
+        var content = new VBox(12, table);
+        VBox.setVgrow(table, Priority.ALWAYS);
+        
+        return content;
+    }
+    
+    // Shared method for creating audit log tables (removes duplication)
+    private TableView<AuditEntry> createSharedAuditLogTable() {
         var table = new TableView<AuditEntry>();
         table.getStyleClass().add("table-view");
 
@@ -4047,11 +4306,8 @@ public class App extends Application {
         // Load real audit logs from database
         ObservableList<AuditEntry> data = DatabaseHelper.getAuditLogs();
         table.setItems(data);
-
-        var content = new VBox(12, table);
-        VBox.setVgrow(table, Priority.ALWAYS);
         
-        return content;
+        return table;
     }
 
     // ==================== COMPLAINT MANAGEMENT ====================
@@ -4105,8 +4361,8 @@ public class App extends Application {
     }
 
     private VBox createComplaintSubmissionPanel() {
-        VBox panel = new VBox(16);
-        panel.setPadding(new Insets(24));
+        VBox panel = new VBox(15);
+        // No padding - center container already has 20px padding
         panel.setMaxWidth(Double.MAX_VALUE);
 
         Label titleLabel = new Label("Submit a Complaint or Incident Report");
@@ -4134,7 +4390,7 @@ public class App extends Application {
 
         java.util.concurrent.atomic.AtomicReference<String> selectedPhotoPath = new java.util.concurrent.atomic.AtomicReference<>(null);
         Label photoPathLabel = new Label("No photo selected");
-        photoPathLabel.setStyle("-fx-text-fill: #64748b; -fx-font-size: 13;");
+        photoPathLabel.getStyleClass().add("photo-path-empty");
 
         Button uploadPhotoBtn = new Button("Photo", new FontIcon(FontAwesomeSolid.IMAGE));
         uploadPhotoBtn.getStyleClass().addAll("button-secondary", "button-small");
@@ -4149,7 +4405,8 @@ public class App extends Application {
             if (file != null) {
                 selectedPhotoPath.set(file.getAbsolutePath());
                 photoPathLabel.setText("✓ " + file.getName());
-                photoPathLabel.setStyle("-fx-text-fill: #10b981; -fx-font-size: 13; -fx-font-weight: 600;");
+                photoPathLabel.getStyleClass().removeAll("photo-path-empty");
+                photoPathLabel.getStyleClass().add("photo-path-selected");
             }
         });
 
@@ -4231,8 +4488,8 @@ public class App extends Application {
     }
 
     private VBox createComplaintsManagementPanel() {
-        VBox container = new VBox(10);
-        container.setPadding(new Insets(10));
+        VBox container = new VBox(15);
+        // No padding - center container already has 20px padding
 
         // The complaintsTable is already created in showComplaintsAndIncidents()
 
@@ -4450,7 +4707,6 @@ public class App extends Application {
     }
 
     private void sendComplaintSMS(Complaint complaint) {
-        // Get resident information
         Optional<Resident> residentOpt = DatabaseHelper.getResidentById(complaint.getResidentId());
         if (!residentOpt.isPresent()) {
             showAlert("Error", "Resident not found.");
@@ -4458,134 +4714,25 @@ public class App extends Application {
         }
         
         Resident resident = residentOpt.get();
-        String phone = resident.getPhoneNumber();
+        String recipientName = resident.getFirstName() + " " + resident.getLastName();
+        String contextInfo = "Complaint: " + complaint.getTitle() + "\nStatus: " + complaint.getStatus() + "\nReference: " + complaint.getId();
         
-        if (phone == null || phone.trim().isEmpty()) {
-            showAlert("No Phone Number", "This resident doesn't have a phone number registered.");
-            return;
-        }
+        Map<String, String> templates = new java.util.LinkedHashMap<>();
+        templates.put("Complaint Received", String.format(
+            "Your complaint (Ref: %s) has been received by Barangay San Marino. " +
+            "We will investigate and update you on the progress. Thank you!",
+            complaint.getId()));
+        templates.put("Complaint Under Investigation", String.format(
+            "Update on your complaint (Ref: %s): Currently under investigation. " +
+            "We are working to resolve this matter. Thank you for your patience!",
+            complaint.getId()));
+        templates.put("Complaint Resolved", String.format(
+            "Your complaint (Ref: %s) has been resolved. " +
+            "Thank you for bringing this to our attention. For questions, visit the barangay office.",
+            complaint.getId()));
+        templates.put("Custom Message", "");
         
-        // Create SMS dialog
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle("Send SMS Notification");
-        dialog.setHeaderText("Send SMS to: " + resident.getFirstName() + " " + resident.getLastName());
-        
-        // Template selection
-        ComboBox<String> templateCombo = new ComboBox<>();
-        templateCombo.getItems().addAll(
-            "Complaint Received",
-            "Complaint Under Investigation",
-            "Complaint Resolved",
-            "Custom Message"
-        );
-        templateCombo.setValue("Complaint Received");
-        
-        // Message area
-        TextArea messageArea = new TextArea();
-        messageArea.setPrefRowCount(5);
-        messageArea.setWrapText(true);
-        
-        // Character count label
-        Label charCountLabel = new Label("Characters: 0");
-        
-        // Update message when template changes
-        templateCombo.setOnAction(e -> {
-            String template = templateCombo.getValue();
-            String message = "";
-            
-            switch (template) {
-                case "Complaint Received":
-                    message = String.format(
-                        "Your complaint (Ref: %s) has been received by Barangay San Marino. " +
-                        "We will investigate and update you on the progress. Thank you!",
-                        complaint.getId()
-                    );
-                    break;
-                case "Complaint Under Investigation":
-                    message = String.format(
-                        "Update on your complaint (Ref: %s): Currently under investigation. " +
-                        "We are working to resolve this matter. Thank you for your patience!",
-                        complaint.getId()
-                    );
-                    break;
-                case "Complaint Resolved":
-                    message = String.format(
-                        "Your complaint (Ref: %s) has been resolved. " +
-                        "Thank you for bringing this to our attention. For questions, visit the barangay office.",
-                        complaint.getId()
-                    );
-                    break;
-                case "Custom Message":
-                    message = "";
-                    break;
-            }
-            
-            messageArea.setText(message);
-            charCountLabel.setText("Characters: " + message.length());
-        });
-        
-        // Trigger initial message
-        templateCombo.fireEvent(new ActionEvent());
-        
-        // Update character count on text change
-        messageArea.textProperty().addListener((obs, old, newVal) -> {
-            charCountLabel.setText("Characters: " + newVal.length());
-            if (newVal.length() > 160) {
-                charCountLabel.setStyle("-fx-text-fill: orange;");
-            } else {
-                charCountLabel.setStyle("-fx-text-fill: black;");
-            }
-        });
-        
-        // Layout
-        VBox content = new VBox(10);
-        content.setPadding(new Insets(10));
-        content.getChildren().addAll(
-            new Label("Phone: " + phone),
-            new Label("Complaint: " + complaint.getTitle()),
-            new Label("Status: " + complaint.getStatus()),
-            new Label("Reference: " + complaint.getId()),
-            new Separator(),
-            new Label("Select Template:"),
-            templateCombo,
-            new Label("Message:"),
-            messageArea,
-            charCountLabel
-        );
-        
-        dialog.getDialogPane().setContent(content);
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
-        
-        // Handle send
-        Optional<ButtonType> result = dialog.showAndWait();
-        if (result.isPresent() && result.get() == ButtonType.OK) {
-            String message = messageArea.getText();
-            if (message == null || message.trim().isEmpty()) {
-                showAlert("Error", "Message cannot be empty.");
-                return;
-            }
-            
-            // Send SMS
-            System.out.println("📤 Sending SMS to: " + phone);
-            SMSService.SMSResponse response = SMSService.sendSMS(phone, message);
-            
-            if (response.isSuccess()) {
-                showAlert("SMS Sent Successfully!", 
-                    "✅ SMS sent to: " + resident.getFirstName() + " " + resident.getLastName() + "\n" +
-                    "📱 Phone: " + phone + "\n" +
-                    "🆔 Message ID: " + response.getMessageId() + "\n\n" +
-                    "The resident should receive the SMS within 1-5 minutes.");
-            } else {
-                showAlert("SMS Failed", 
-                    "❌ Failed to send SMS\n\n" +
-                    "Error: " + response.getMessage() + "\n" +
-                    "Error Code: " + response.getErrorCode() + "\n\n" +
-                    "Please check:\n" +
-                    "1. Phone number is correct\n" +
-                    "2. SMS service is enabled\n" +
-                    "3. You have sufficient SMS credits");
-            }
-        }
+        showSMSDialog(recipientName, resident.getPhoneNumber(), templates, contextInfo);
     }
 
     private void generateComplaintsReport() {
@@ -4647,275 +4794,389 @@ public class App extends Application {
     }
 
     private void showAnnouncementsPortal(VBox center) {
-        // Create shared table upfront
-        if (announcementsTable == null) {
-            announcementsTable = new TableView<>();
-            announcementsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        // Create the announcements table ONCE upfront so both tabs can share it
+        announcementsTable = new TableView<>();
+        announcementsTable.getStyleClass().add("table-view");
 
-            var titleColumn = new TableColumn<Announcement, String>("Title");
-            titleColumn.setCellValueFactory(new PropertyValueFactory<>("title"));
+        TableColumn<Announcement, String> titleCol = new TableColumn<>("Title");
+        titleCol.setCellValueFactory(new PropertyValueFactory<>("title"));
+        titleCol.setPrefWidth(200);
 
-            var typeColumn = new TableColumn<Announcement, String>("Type");
-            typeColumn.setCellValueFactory(new PropertyValueFactory<>("type"));
+        TableColumn<Announcement, String> typeCol = new TableColumn<>("Type");
+        typeCol.setCellValueFactory(new PropertyValueFactory<>("type"));
+        typeCol.setPrefWidth(120);
 
-            var postedByColumn = new TableColumn<Announcement, String>("Posted By");
-            postedByColumn.setCellValueFactory(new PropertyValueFactory<>("postedBy"));
+        TableColumn<Announcement, String> statusCol = new TableColumn<>("Status");
+        statusCol.setCellValueFactory(new PropertyValueFactory<>("status"));
+        statusCol.setPrefWidth(80);
 
-            var postedDateColumn = new TableColumn<Announcement, String>("Posted Date");
-            postedDateColumn.setCellValueFactory(new PropertyValueFactory<>("postedDate"));
+        TableColumn<Announcement, String> postedDateCol = new TableColumn<>("Posted Date");
+        postedDateCol.setCellValueFactory(new PropertyValueFactory<>("postedDate"));
+        postedDateCol.setPrefWidth(140);
 
-            var statusColumn = new TableColumn<Announcement, String>("Status");
-            statusColumn.setCellValueFactory(new PropertyValueFactory<>("status"));
+        TableColumn<Announcement, String> postedByCol = new TableColumn<>("Posted By");
+        postedByCol.setCellValueFactory(new PropertyValueFactory<>("postedBy"));
+        postedByCol.setPrefWidth(120);
 
-            var viewsColumn = new TableColumn<Announcement, String>("Views");
-            viewsColumn.setCellValueFactory(new PropertyValueFactory<>("views"));
+        TableColumn<Announcement, Integer> viewsCol = new TableColumn<>("Views");
+        viewsCol.setCellValueFactory(new PropertyValueFactory<>("views"));
+        viewsCol.setPrefWidth(80);
 
-            @SuppressWarnings("unchecked")
-            TableColumn<Announcement, ?>[] columns = new TableColumn[] {titleColumn, typeColumn, postedByColumn, postedDateColumn, statusColumn, viewsColumn};
-            announcementsTable.getColumns().addAll(columns);
-            refreshAnnouncementsTable();
-        }
+        announcementsTable.getColumns().setAll(List.of(titleCol, typeCol, statusCol, postedDateCol, postedByCol, viewsCol));
 
-        // Create tabs for posting and managing
-        var postingTab = new Tab("Post Announcement", createAnnouncementPostingPanel());
-        postingTab.setClosable(false);
-        postingTab.getStyleClass().add("tab");
+        // Load initial data
+        ObservableList<Announcement> announcements = DatabaseHelper.getAllAnnouncements();
+        announcementsTable.setItems(announcements);
 
-        var managementTab = new Tab("Manage Announcements", createAnnouncementManagementPanel());
-        managementTab.setClosable(false);
-        managementTab.getStyleClass().add("tab");
-
-        var tabPane = new TabPane(postingTab, managementTab);
+        // Two tabs: Post announcement and manage announcements
+        TabPane tabPane = new TabPane();
         tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
         tabPane.getStyleClass().add("tab-pane");
 
-        center.getChildren().clear();
-        center.getChildren().add(tabPane);
+        // Tab 1: Post New Announcement
+        Tab postTab = new Tab("Post Announcement", createAnnouncementPostingPanel());
+        postTab.getStyleClass().add("tab");
+
+        // Tab 2: Manage Announcements
+        Tab manageTab = new Tab("Manage Announcements", createAnnouncementManagementPanel());
+        manageTab.getStyleClass().add("tab");
+
+        tabPane.getTabs().addAll(postTab, manageTab);
+        updateDashboardContent(center, "Announcement Portal", tabPane);
     }
 
     private VBox createAnnouncementPostingPanel() {
-        var container = new VBox(15);
-        container.setPadding(new Insets(15));
-        container.setStyle("-fx-background-color: " + "#ffffff" + ";");
+        VBox panel = new VBox(15);
+        // No padding - center container already has 20px padding
+        panel.setMaxWidth(Double.MAX_VALUE);
 
-        var titleLabel = new Label("Post New Announcement");
-        titleLabel.setStyle("-fx-font-size: 16; -fx-font-weight: bold;");
+        Label titleLabel = new Label("Post New Announcement");
+        titleLabel.getStyleClass().add("text-heading-sm");
 
-        var form = new GridPane();
-        form.setHgap(10);
-        form.setVgap(10);
+        // Announcement Title
+        Label announcementTitleLabel = new Label("Announcement Title");
+        announcementTitleLabel.getStyleClass().add("form-label");
+        TextField titleField = new TextField();
+        titleField.setPromptText("E.g., Community Event, Emergency Alert, etc.");
+        titleField.getStyleClass().add("text-field");
 
-        var titleField = new TextField();
-        titleField.setPromptText("Announcement Title");
-        titleField.setPrefHeight(35);
-
-        var typeCombo = new ComboBox<String>();
-        typeCombo.getItems().addAll("Event", "Emergency Alert", "Program");
+        // Type Selection
+        Label typeLabel = new Label("Announcement Type");
+        typeLabel.getStyleClass().add("form-label");
+        ComboBox<String> typeCombo = new ComboBox<>();
+        typeCombo.setItems(FXCollections.observableArrayList("Event", "Emergency Alert", "Program"));
         typeCombo.setPromptText("Select Type");
-        typeCombo.setPrefHeight(35);
+        typeCombo.getStyleClass().add("combo-box");
 
-        var contentArea = new TextArea();
-        contentArea.setPromptText("Announcement Content...");
+        // Content
+        Label contentLabel = new Label("Announcement Content");
+        contentLabel.getStyleClass().add("form-label");
+        TextArea contentArea = new TextArea();
+        contentArea.setPromptText("Provide detailed information about the announcement...");
         contentArea.setWrapText(true);
-        contentArea.setPrefHeight(120);
+        contentArea.setPrefRowCount(6);
+        contentArea.getStyleClass().add("text-area");
 
-        var startDatePicker = new DatePicker();
-        startDatePicker.setPromptText("Start Date");
-        startDatePicker.setPrefHeight(35);
+        // Start Date
+        Label startDateLabel = new Label("Start Date");
+        startDateLabel.getStyleClass().add("form-label");
+        DatePicker startDatePicker = new DatePicker();
+        startDatePicker.setPromptText("Select Start Date");
+        startDatePicker.getStyleClass().add("date-picker");
 
-        var endDatePicker = new DatePicker();
-        endDatePicker.setPromptText("End Date (Optional)");
-        endDatePicker.setPrefHeight(35);
+        // End Date (Optional)
+        Label endDateLabel = new Label("End Date (Optional)");
+        endDateLabel.getStyleClass().add("form-label");
+        DatePicker endDatePicker = new DatePicker();
+        endDatePicker.setPromptText("Select End Date");
+        endDatePicker.getStyleClass().add("date-picker");
 
-        form.add(new Label("Title:"), 0, 0);
-        form.add(titleField, 1, 0);
-        form.add(new Label("Type:"), 0, 1);
-        form.add(typeCombo, 1, 1);
-        form.add(new Label("Content:"), 0, 2);
-        form.add(contentArea, 1, 2);
-        form.add(new Label("Start Date:"), 0, 3);
-        form.add(startDatePicker, 1, 3);
-        form.add(new Label("End Date:"), 0, 4);
-        form.add(endDatePicker, 1, 4);
+        // Post Button
+        Button postBtn = new Button("Post", new FontIcon(FontAwesomeSolid.BULLHORN));
+        postBtn.getStyleClass().addAll("button-primary", "button-small");
+        postBtn.setTooltip(new Tooltip("Post Announcement"));
+        postBtn.setDisable(true);
 
-        GridPane.setHgrow(titleField, Priority.ALWAYS);
-        GridPane.setHgrow(contentArea, Priority.ALWAYS);
+        // Enable button only when required fields are filled
+        titleField.textProperty().addListener((obs, oldVal, newVal) ->
+            postBtn.setDisable(newVal.trim().isEmpty() || typeCombo.getValue() == null || 
+                              contentArea.getText().trim().isEmpty() || startDatePicker.getValue() == null)
+        );
+        typeCombo.valueProperty().addListener((obs, oldVal, newVal) ->
+            postBtn.setDisable(titleField.getText().trim().isEmpty() || newVal == null || 
+                              contentArea.getText().trim().isEmpty() || startDatePicker.getValue() == null)
+        );
+        contentArea.textProperty().addListener((obs, oldVal, newVal) ->
+            postBtn.setDisable(titleField.getText().trim().isEmpty() || typeCombo.getValue() == null || 
+                              newVal.trim().isEmpty() || startDatePicker.getValue() == null)
+        );
+        startDatePicker.valueProperty().addListener((obs, oldVal, newVal) ->
+            postBtn.setDisable(titleField.getText().trim().isEmpty() || typeCombo.getValue() == null || 
+                              contentArea.getText().trim().isEmpty() || newVal == null)
+        );
 
-        var submitBtn = new Button("Post");
-        submitBtn.getStyleClass().addAll("button-primary", "button-small");
-        submitBtn.setTooltip(new Tooltip("Post Announcement"));
-        submitBtn.setOnAction(e -> {
+        postBtn.setOnAction(e -> {
             String title = titleField.getText().trim();
             String type = typeCombo.getValue();
             String content = contentArea.getText().trim();
             LocalDate startDate = startDatePicker.getValue();
             LocalDate endDate = endDatePicker.getValue();
 
-            if (title.isEmpty() || type == null || content.isEmpty() || startDate == null) {
-                showAlert("Validation Error", "Please fill in all required fields (Title, Type, Content, Start Date)");
-                return;
-            }
-
             try {
-                Announcement announcement = new Announcement(title, content, type,
+                System.out.println("=== Posting Announcement ===");
+                System.out.println("Current Username: " + currentUsername);
+                System.out.println("Title: " + title);
+                System.out.println("Type: " + type);
+                System.out.println("Content: " + content);
+                System.out.println("Start Date: " + startDate);
+                System.out.println("End Date: " + endDate);
+                
+                // Create announcement with current user info
+                Announcement announcement = new Announcement(
+                    title, 
+                    content, 
+                    type,
                     currentUsername != null ? currentUsername : "Admin",
                     startDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd")),
-                    endDate != null ? endDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) : "");
-
+                    endDate != null ? endDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) : ""
+                );
+                System.out.println("Announcement object created");
+                
                 int announcementId = DatabaseHelper.createAnnouncement(announcement);
-                System.out.println("Announcement posted with ID: " + announcementId);
+                System.out.println("Created announcement with ID: " + announcementId);
 
-                showToast("Announcement posted successfully!");
-                titleField.clear();
-                typeCombo.setValue(null);
-                contentArea.clear();
-                startDatePicker.setValue(null);
-                endDatePicker.setValue(null);
-
-                refreshAnnouncementsTable();
+                if (announcementId > 0) {
+                    System.out.println("Success! Refreshing table...");
+                    showToast("Announcement posted successfully! ID: " + announcementId);
+                    titleField.clear();
+                    typeCombo.setValue(null);
+                    contentArea.clear();
+                    startDatePicker.setValue(null);
+                    endDatePicker.setValue(null);
+                    
+                    // Refresh the management table in real-time
+                    refreshAnnouncementsTable();
+                } else {
+                    System.out.println("Failed to create announcement (ID was " + announcementId + ")");
+                    showToast("Failed to post announcement.");
+                }
             } catch (Exception ex) {
+                System.err.println("Exception during announcement posting: " + ex.getMessage());
                 ex.printStackTrace();
-                showAlert("Error", "Failed to post announcement: " + ex.getMessage());
+                showToast("Error posting announcement: " + ex.getMessage());
             }
         });
 
-        var buttonBox = new HBox(10);
-        buttonBox.setAlignment(Pos.CENTER);
-        buttonBox.getChildren().add(submitBtn);
+        panel.getChildren().addAll(
+            titleLabel,
+            new Separator(),
+            announcementTitleLabel, titleField,
+            new Separator(),
+            typeLabel, typeCombo,
+            new Separator(),
+            contentLabel, contentArea,
+            new Separator(),
+            startDateLabel, startDatePicker,
+            new Separator(),
+            endDateLabel, endDatePicker,
+            postBtn
+        );
 
-        container.getChildren().addAll(titleLabel, form, buttonBox);
+        ScrollPane scrollPane = new ScrollPane(panel);
+        scrollPane.setFitToWidth(true);
+
+        VBox container = new VBox(scrollPane);
+        VBox.setVgrow(scrollPane, Priority.ALWAYS);
         return container;
     }
 
     private VBox createAnnouncementManagementPanel() {
-        var container = new VBox(10);
-        container.setPadding(new Insets(15));
-        container.setStyle("-fx-background-color: " + "#ffffff" + ";");
+        VBox container = new VBox(15);
+        // No padding - center container already has 20px padding
 
-        var filterBox = new HBox(10);
-        filterBox.setAlignment(Pos.CENTER_LEFT);
+        // The announcementsTable is already created in showAnnouncementsPortal()
 
-        var typeFilterCombo = new ComboBox<String>();
-        typeFilterCombo.getItems().addAll("All", "Event", "Emergency Alert", "Program");
-        typeFilterCombo.setValue("All");
-        typeFilterCombo.setPrefWidth(150);
-
-        typeFilterCombo.setOnAction(e -> {
-            String selectedType = typeFilterCombo.getValue();
-            if ("All".equals(selectedType)) {
-                refreshAnnouncementsTable();
-            } else {
-                Platform.runLater(() -> {
-                    ObservableList<Announcement> announcements = DatabaseHelper.getAnnouncementsByType(selectedType);
-                    announcementsTable.setItems(announcements);
-                });
-            }
-        });
-
-        filterBox.getChildren().addAll(new Label("Filter by Type:"), typeFilterCombo);
-
-        var buttonBox = new HBox(10);
-        buttonBox.setPadding(new Insets(10, 0, 0, 0));
-
-        var viewBtn = new Button("View");
+        // Buttons
+        Button viewBtn = new Button("View", new FontIcon(FontAwesomeSolid.EYE));
         viewBtn.getStyleClass().addAll("button-secondary", "button-small");
         viewBtn.setTooltip(new Tooltip("View Details"));
+        viewBtn.setDisable(true);
         viewBtn.setOnAction(e -> {
-            var selected = announcementsTable.getSelectionModel().getSelectedItem();
-            if (selected == null) {
-                showAlert("Info", "Please select an announcement");
-                return;
+            Announcement selected = announcementsTable.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                showAnnouncementDetailsDialog(selected);
             }
-            showAnnouncementDetailsDialog(selected);
         });
 
-        var editBtn = new Button("Edit");
+        Button editBtn = new Button("Edit", new FontIcon(FontAwesomeSolid.EDIT));
         editBtn.getStyleClass().addAll("button-secondary", "button-small");
         editBtn.setTooltip(new Tooltip("Edit Announcement"));
+        editBtn.setDisable(true);
         editBtn.setOnAction(e -> {
-            var selected = announcementsTable.getSelectionModel().getSelectedItem();
-            if (selected == null) {
-                showAlert("Info", "Please select an announcement");
-                return;
+            Announcement selected = announcementsTable.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                showAnnouncementEditorDialog(selected);
             }
-            showAnnouncementEditorDialog(selected);
         });
 
-        var toggleStatusBtn = new Button("Toggle");
-        toggleStatusBtn.getStyleClass().addAll("button-secondary", "button-small");
-        toggleStatusBtn.setTooltip(new Tooltip("Toggle Status"));
-        toggleStatusBtn.setOnAction(e -> {
-            var selected = announcementsTable.getSelectionModel().getSelectedItem();
-            if (selected == null) {
-                showAlert("Info", "Please select an announcement");
-                return;
+        Button statusBtn = new Button("Status", new FontIcon(FontAwesomeSolid.TOGGLE_ON));
+        statusBtn.getStyleClass().addAll("button-secondary", "button-small");
+        statusBtn.setTooltip(new Tooltip("Toggle Status"));
+        statusBtn.setDisable(true);
+        statusBtn.setOnAction(e -> {
+            Announcement selected = announcementsTable.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                showAnnouncementStatusDialog(selected);
             }
-            String newStatus = "Active".equals(selected.getStatus()) ? "Inactive" : "Active";
-            DatabaseHelper.updateAnnouncement(selected.getId(), selected.getTitle(), selected.getContent(), selected.getType(), newStatus);
-            showToast("Status updated to: " + newStatus);
-            refreshAnnouncementsTable();
         });
 
-        var deleteBtn = new Button("Delete");
+        Button deleteBtn = new Button("Delete", new FontIcon(FontAwesomeSolid.TRASH));
         deleteBtn.getStyleClass().addAll("button-danger", "button-small");
         deleteBtn.setTooltip(new Tooltip("Delete Announcement"));
+        deleteBtn.setDisable(true);
         deleteBtn.setOnAction(e -> {
-            var selected = announcementsTable.getSelectionModel().getSelectedItem();
-            if (selected == null) {
-                showAlert("Info", "Please select an announcement");
-                return;
-            }
-            Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
-            confirm.setTitle("Confirm Deletion");
-            confirm.setHeaderText("Delete Announcement?");
-            confirm.setContentText("Are you sure you want to delete: " + selected.getTitle() + "?");
-            if (confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
-                DatabaseHelper.deleteAnnouncement(selected.getId());
-                showToast("Announcement deleted");
-                refreshAnnouncementsTable();
+            Announcement selected = announcementsTable.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                showDeleteAnnouncementConfirmation(selected);
             }
         });
 
-        // Broadcast SMS Button
-        var broadcastSMSBtn = new Button("Broadcast", new FontIcon(FontAwesomeSolid.BULLHORN));
-        broadcastSMSBtn.getStyleClass().addAll("button-warning", "button-small");
-        broadcastSMSBtn.setTooltip(new Tooltip("Broadcast SMS"));
-        broadcastSMSBtn.setOnAction(e -> {
-            var selected = announcementsTable.getSelectionModel().getSelectedItem();
-            if (selected == null) {
-                showAlert("Info", "Please select an announcement to broadcast");
-                return;
+        Button broadcastBtn = new Button("Broadcast", new FontIcon(FontAwesomeSolid.BULLHORN));
+        broadcastBtn.getStyleClass().addAll("button-warning", "button-small");
+        broadcastBtn.setTooltip(new Tooltip("Broadcast SMS"));
+        broadcastBtn.setDisable(true);
+        broadcastBtn.setOnAction(e -> {
+            Announcement selected = announcementsTable.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                broadcastAnnouncementSMS(selected);
             }
-            broadcastAnnouncementSMS(selected);
         });
 
-        buttonBox.getChildren().addAll(viewBtn, editBtn, toggleStatusBtn, deleteBtn, broadcastSMSBtn);
+        Button reportBtn = new Button("Report", new FontIcon(FontAwesomeSolid.FILE_PDF));
+        reportBtn.getStyleClass().addAll("button-secondary", "button-small");
+        reportBtn.setTooltip(new Tooltip("Generate Report"));
+        reportBtn.setOnAction(e -> generateAnnouncementsReport());
 
-        container.getChildren().addAll(filterBox, announcementsTable, buttonBox);
+        announcementsTable.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+            boolean isSelected = newVal != null;
+            viewBtn.setDisable(!isSelected);
+            editBtn.setDisable(!isSelected);
+            statusBtn.setDisable(!isSelected);
+            deleteBtn.setDisable(!isSelected);
+            broadcastBtn.setDisable(!isSelected);
+        });
+
+        ToolBar toolBar = new ToolBar(viewBtn, editBtn, statusBtn, deleteBtn, new Separator(), broadcastBtn, reportBtn);
+        toolBar.getStyleClass().add("toolbar-transparent");
+
+        container.getChildren().addAll(toolBar, announcementsTable);
         VBox.setVgrow(announcementsTable, Priority.ALWAYS);
-
         return container;
     }
 
     private void showAnnouncementDetailsDialog(Announcement announcement) {
-        Alert dialog = new Alert(Alert.AlertType.INFORMATION);
-        dialog.setTitle("Announcement Details");
-        dialog.setHeaderText(announcement.getTitle());
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("Announcement Details - ID #" + announcement.getId());
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
 
-        var content = new StringBuilder();
-        content.append("Type: ").append(announcement.getType()).append("\n");
-        content.append("Posted By: ").append(announcement.getPostedBy()).append("\n");
-        content.append("Posted Date: ").append(announcement.getPostedDate()).append("\n");
-        content.append("Status: ").append(announcement.getStatus()).append("\n");
-        content.append("Start Date: ").append(announcement.getStartDate()).append("\n");
-        if (announcement.getEndDate() != null && !announcement.getEndDate().isEmpty()) {
-            content.append("End Date: ").append(announcement.getEndDate()).append("\n");
-        }
-        content.append("Views: ").append(announcement.getViews()).append("\n\n");
-        content.append("Content:\n").append(announcement.getContent());
+        GridPane grid = new GridPane();
+        grid.setHgap(15);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(20));
 
-        dialog.setContentText(content.toString());
+        Label titleLabel = new Label("Title:");
+        Label titleValue = new Label(announcement.getTitle());
+        titleValue.getStyleClass().add("text-bold");
+
+        Label typeLabel = new Label("Type:");
+        Label typeValue = new Label(announcement.getType());
+        typeValue.getStyleClass().add("text-bold");
+
+        Label statusLabel = new Label("Status:");
+        Label statusValue = new Label(announcement.getStatus());
+        statusValue.getStyleClass().add("text-bold");
+
+        Label postedByLabel = new Label("Posted By:");
+        Label postedByValue = new Label(announcement.getPostedBy());
+
+        Label postedDateLabel = new Label("Posted Date:");
+        Label postedDateValue = new Label(announcement.getPostedDate());
+
+        Label startDateLabel = new Label("Start Date:");
+        Label startDateValue = new Label(announcement.getStartDate());
+
+        Label endDateLabel = new Label("End Date:");
+        Label endDateValue = new Label(announcement.getEndDate() != null && !announcement.getEndDate().isEmpty() 
+            ? announcement.getEndDate() : "N/A");
+
+        Label viewsLabel = new Label("Views:");
+        Label viewsValue = new Label(String.valueOf(announcement.getViews()));
+
+        Label contentLabel = new Label("Content:");
+        TextArea contentArea = new TextArea(announcement.getContent());
+        contentArea.setWrapText(true);
+        contentArea.setEditable(false);
+        contentArea.setPrefRowCount(6);
+
+        grid.add(titleLabel, 0, 0);
+        grid.add(titleValue, 1, 0);
+        grid.add(typeLabel, 0, 1);
+        grid.add(typeValue, 1, 1);
+        grid.add(statusLabel, 0, 2);
+        grid.add(statusValue, 1, 2);
+        grid.add(postedByLabel, 0, 3);
+        grid.add(postedByValue, 1, 3);
+        grid.add(postedDateLabel, 0, 4);
+        grid.add(postedDateValue, 1, 4);
+        grid.add(startDateLabel, 0, 5);
+        grid.add(startDateValue, 1, 5);
+        grid.add(endDateLabel, 0, 6);
+        grid.add(endDateValue, 1, 6);
+        grid.add(viewsLabel, 0, 7);
+        grid.add(viewsValue, 1, 7);
+        grid.add(contentLabel, 0, 8);
+        grid.add(contentArea, 1, 8);
+
+        dialog.getDialogPane().setContent(grid);
         dialog.showAndWait();
+    }
+
+    private void showAnnouncementStatusDialog(Announcement announcement) {
+        Dialog<String> dialog = new Dialog<>();
+        dialog.setTitle("Update Announcement Status");
+        dialog.setHeaderText("Update the status for: " + announcement.getTitle());
+
+        ButtonType updateButtonType = new ButtonType("Update", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(updateButtonType, ButtonType.CANCEL);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(20));
+
+        Label statusLabel = new Label("New Status:");
+        ComboBox<String> statusCombo = new ComboBox<>();
+        statusCombo.setItems(FXCollections.observableArrayList("Active", "Inactive"));
+        statusCombo.setValue(announcement.getStatus());
+
+        grid.add(statusLabel, 0, 0);
+        grid.add(statusCombo, 1, 0);
+
+        dialog.getDialogPane().setContent(grid);
+        dialog.setResultConverter(dialogButton -> {
+            if (dialogButton == updateButtonType) {
+                return statusCombo.getValue();
+            }
+            return null;
+        });
+
+        dialog.showAndWait().ifPresent(newStatus -> {
+            DatabaseHelper.updateAnnouncement(announcement.getId(), announcement.getTitle(), 
+                announcement.getContent(), newStatus, announcement.getEndDate());
+            announcement.setStatus(newStatus);
+            showToast("Announcement status updated to: " + newStatus);
+            refreshAnnouncementsTable();
+        });
     }
 
     private void showAnnouncementEditorDialog(Announcement announcement) {
@@ -4923,54 +5184,85 @@ public class App extends Application {
         dialog.setTitle("Edit Announcement");
         dialog.setHeaderText("Update Announcement Details");
 
-        var grid = new GridPane();
+        ButtonType saveButtonType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
+
+        GridPane grid = new GridPane();
         grid.setHgap(10);
         grid.setVgap(10);
-        grid.setPadding(new Insets(15));
+        grid.setPadding(new Insets(20));
 
-        var titleField = new TextField(announcement.getTitle());
-        var typeCombo = new ComboBox<String>();
-        typeCombo.getItems().addAll("Event", "Emergency Alert", "Program");
+        Label titleLabel = new Label("Title:");
+        TextField titleField = new TextField(announcement.getTitle());
+
+        Label typeLabel = new Label("Type:");
+        ComboBox<String> typeCombo = new ComboBox<>();
+        typeCombo.setItems(FXCollections.observableArrayList("Event", "Emergency Alert", "Program"));
         typeCombo.setValue(announcement.getType());
-        var contentArea = new TextArea(announcement.getContent());
+
+        Label contentLabel = new Label("Content:");
+        TextArea contentArea = new TextArea(announcement.getContent());
         contentArea.setWrapText(true);
-        contentArea.setPrefHeight(120);
-        var statusCombo = new ComboBox<String>();
-        statusCombo.getItems().addAll("Active", "Inactive");
+        contentArea.setPrefRowCount(6);
+
+        Label statusLabel = new Label("Status:");
+        ComboBox<String> statusCombo = new ComboBox<>();
+        statusCombo.setItems(FXCollections.observableArrayList("Active", "Inactive"));
         statusCombo.setValue(announcement.getStatus());
 
-        grid.add(new Label("Title:"), 0, 0);
+        Label endDateLabel = new Label("End Date:");
+        DatePicker endDatePicker = new DatePicker();
+        if (announcement.getEndDate() != null && !announcement.getEndDate().isEmpty()) {
+            try {
+                endDatePicker.setValue(LocalDate.parse(announcement.getEndDate()));
+            } catch (Exception e) {
+                // Invalid date format, leave empty
+            }
+        }
+
+        grid.add(titleLabel, 0, 0);
         grid.add(titleField, 1, 0);
-        grid.add(new Label("Type:"), 0, 1);
+        grid.add(typeLabel, 0, 1);
         grid.add(typeCombo, 1, 1);
-        grid.add(new Label("Content:"), 0, 2);
+        grid.add(contentLabel, 0, 2);
         grid.add(contentArea, 1, 2);
-        grid.add(new Label("Status:"), 0, 3);
+        grid.add(statusLabel, 0, 3);
         grid.add(statusCombo, 1, 3);
+        grid.add(endDateLabel, 0, 4);
+        grid.add(endDatePicker, 1, 4);
 
         GridPane.setHgrow(titleField, Priority.ALWAYS);
         GridPane.setHgrow(contentArea, Priority.ALWAYS);
 
         dialog.getDialogPane().setContent(grid);
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
-
-        dialog.setResultConverter(buttonType -> {
-            if (buttonType == ButtonType.OK) {
-                try {
-                    DatabaseHelper.updateAnnouncement(announcement.getId(), titleField.getText(), contentArea.getText(), typeCombo.getValue(), statusCombo.getValue());
-                    showToast("Announcement updated successfully");
-                    refreshAnnouncementsTable();
-                    return true;
-                } catch (Exception ex) {
-                    ex.printStackTrace();
-                    showAlert("Error", "Failed to update announcement");
-                    return false;
-                }
+        dialog.setResultConverter(dialogButton -> {
+            if (dialogButton == saveButtonType) {
+                String endDate = endDatePicker.getValue() != null 
+                    ? endDatePicker.getValue().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) 
+                    : "";
+                DatabaseHelper.updateAnnouncement(announcement.getId(), titleField.getText(), 
+                    contentArea.getText(), statusCombo.getValue(), endDate);
+                showToast("Announcement updated successfully!");
+                refreshAnnouncementsTable();
+                return true;
             }
             return false;
         });
 
         dialog.showAndWait();
+    }
+
+    private void showDeleteAnnouncementConfirmation(Announcement announcement) {
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+        confirm.setTitle("Confirm Deletion");
+        confirm.setHeaderText("Delete Announcement?");
+        confirm.setContentText("Are you sure you want to delete: " + announcement.getTitle() + "?\n\nThis action cannot be undone.");
+        
+        if (confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
+            DatabaseHelper.deleteAnnouncement(announcement.getId());
+            showToast("Announcement deleted successfully!");
+            refreshAnnouncementsTable();
+        }
     }
 
     private void refreshAnnouncementsTable() {
@@ -5004,19 +5296,30 @@ public class App extends Application {
             return;
         }
         
-        // Create SMS dialog
+        // Use specialized broadcast dialog for bulk SMS
+        showBroadcastSMSDialog(announcement, phoneNumbers);
+    }
+    
+    private void showBroadcastSMSDialog(Announcement announcement, java.util.List<String> phoneNumbers) {
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.setTitle("Broadcast Announcement SMS");
         dialog.setHeaderText("Broadcast to " + phoneNumbers.size() + " residents");
         
         // Template selection
         ComboBox<String> templateCombo = new ComboBox<>();
-        templateCombo.getItems().addAll(
-            "Announcement Notification",
-            "Event Reminder",
-            "Emergency Alert",
-            "Custom Message"
-        );
+        Map<String, String> templates = new java.util.LinkedHashMap<>();
+        templates.put("Announcement Notification", String.format(
+            "Barangay San Marino Announcement: %s. For more details, visit the barangay office. Thank you!",
+            announcement.getTitle()));
+        templates.put("Event Reminder", String.format(
+            "Reminder: %s on %s. Please mark your calendar. For inquiries, contact the barangay office. Thank you!",
+            announcement.getTitle(), announcement.getStartDate()));
+        templates.put("Emergency Alert", String.format(
+            "URGENT: %s. Please stay informed and follow barangay guidelines. Stay safe!",
+            announcement.getTitle()));
+        templates.put("Custom Message", "");
+        
+        templateCombo.getItems().addAll(templates.keySet());
         templateCombo.setValue("Announcement Notification");
         
         // Message area
@@ -5024,65 +5327,25 @@ public class App extends Application {
         messageArea.setPrefRowCount(5);
         messageArea.setWrapText(true);
         
-        // Character count label
+        // Character count and cost labels
         Label charCountLabel = new Label("Characters: 0");
+        Label costLabel = new Label("Estimated cost: 0 SMS credits");
+        costLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #dc2626;");
         
         // Update message when template changes
         templateCombo.setOnAction(e -> {
             String template = templateCombo.getValue();
-            String message = "";
-            
-            switch (template) {
-                case "Announcement Notification":
-                    message = String.format(
-                        "Barangay San Marino Announcement: %s. For more details, visit the barangay office. Thank you!",
-                        announcement.getTitle()
-                    );
-                    break;
-                case "Event Reminder":
-                    message = String.format(
-                        "Reminder: %s on %s. Please mark your calendar. For inquiries, contact the barangay office. Thank you!",
-                        announcement.getTitle(),
-                        announcement.getStartDate()
-                    );
-                    break;
-                case "Emergency Alert":
-                    message = String.format(
-                        "URGENT: %s. Please stay informed and follow barangay guidelines. Stay safe!",
-                        announcement.getTitle()
-                    );
-                    break;
-                case "Custom Message":
-                    message = "";
-                    break;
-            }
-            
+            String message = templates.getOrDefault(template, "");
             messageArea.setText(message);
-            charCountLabel.setText("Characters: " + message.length());
+            updateCostEstimate(message, phoneNumbers.size(), charCountLabel, costLabel);
         });
         
         // Trigger initial message
         templateCombo.fireEvent(new ActionEvent());
         
-        // Update character count on text change
+        // Update character count and cost on text change
         messageArea.textProperty().addListener((obs, old, newVal) -> {
-            charCountLabel.setText("Characters: " + newVal.length());
-            if (newVal.length() > 160) {
-                charCountLabel.setStyle("-fx-text-fill: orange;");
-            } else {
-                charCountLabel.setStyle("-fx-text-fill: black;");
-            }
-        });
-        
-        // Cost estimate
-        int smsCount = (int) Math.ceil(messageArea.getText().length() / 160.0);
-        Label costLabel = new Label("Estimated cost: " + (phoneNumbers.size() * smsCount) + " SMS credits");
-        costLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #dc2626;");
-        
-        // Update cost when message changes
-        messageArea.textProperty().addListener((obs, old, newVal) -> {
-            int count = (int) Math.ceil(newVal.length() / 160.0);
-            costLabel.setText("Estimated cost: " + (phoneNumbers.size() * count) + " SMS credits");
+            updateCostEstimate(newVal, phoneNumbers.size(), charCountLabel, costLabel);
         });
         
         // Layout
@@ -5114,6 +5377,7 @@ public class App extends Application {
             }
             
             // Confirm broadcast
+            int smsCount = (int) Math.ceil(message.length() / 160.0);
             Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
             confirm.setTitle("Confirm Broadcast");
             confirm.setHeaderText("Send SMS to " + phoneNumbers.size() + " residents?");
@@ -5145,11 +5409,91 @@ public class App extends Application {
             }
         }
     }
+    
+    private void updateCostEstimate(String message, int recipientCount, Label charCountLabel, Label costLabel) {
+        charCountLabel.setText("Characters: " + message.length());
+        if (message.length() > 160) {
+            charCountLabel.setStyle("-fx-text-fill: orange;");
+        } else {
+            charCountLabel.setStyle("-fx-text-fill: black;");
+        }
+        
+        int smsCount = (int) Math.ceil(message.length() / 160.0);
+        costLabel.setText("Estimated cost: " + (recipientCount * smsCount) + " SMS credits");
+    }
+
+    private void generateAnnouncementsReport() {
+        try {
+            ObservableList<Announcement> announcements = DatabaseHelper.getAllAnnouncements();
+            String filename = "Announcements_Report_" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) + ".pdf";
+            String path = System.getProperty("user.home") + "/Downloads/" + filename;
+
+            Document document = new Document();
+            PdfWriter.getInstance(document, new FileOutputStream(path));
+            document.open();
+
+            // Header
+            com.lowagie.text.Font titleFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 14, com.lowagie.text.Font.BOLD);
+            Paragraph title = new Paragraph("Announcements Report", titleFont);
+            title.setAlignment(com.lowagie.text.Element.ALIGN_CENTER);
+            document.add(title);
+
+            document.add(new Paragraph("\nGenerated: " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))));
+            document.add(new Paragraph("Total Announcements: " + announcements.size()));
+            document.add(new Paragraph("\n"));
+
+            // Summary by Type
+            long events = announcements.stream().filter(a -> "Event".equals(a.getType())).count();
+            long alerts = announcements.stream().filter(a -> "Emergency Alert".equals(a.getType())).count();
+            long programs = announcements.stream().filter(a -> "Program".equals(a.getType())).count();
+
+            // Summary by Status
+            long active = announcements.stream().filter(a -> "Active".equals(a.getStatus())).count();
+            long inactive = announcements.stream().filter(a -> "Inactive".equals(a.getStatus())).count();
+
+            document.add(new Paragraph("Summary by Type:", new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 11, com.lowagie.text.Font.BOLD)));
+            document.add(new Paragraph("Events: " + events));
+            document.add(new Paragraph("Emergency Alerts: " + alerts));
+            document.add(new Paragraph("Programs: " + programs));
+            document.add(new Paragraph("\n"));
+
+            document.add(new Paragraph("Summary by Status:", new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 11, com.lowagie.text.Font.BOLD)));
+            document.add(new Paragraph("Active: " + active));
+            document.add(new Paragraph("Inactive: " + inactive));
+            document.add(new Paragraph("\n"));
+
+            // Detailed Table
+            com.lowagie.text.pdf.PdfPTable table = new com.lowagie.text.pdf.PdfPTable(6);
+            table.setWidthPercentage(100);
+            table.addCell("ID");
+            table.addCell("Title");
+            table.addCell("Type");
+            table.addCell("Status");
+            table.addCell("Posted By");
+            table.addCell("Views");
+
+            for (Announcement announcement : announcements) {
+                table.addCell(String.valueOf(announcement.getId()));
+                table.addCell(announcement.getTitle());
+                table.addCell(announcement.getType());
+                table.addCell(announcement.getStatus());
+                table.addCell(announcement.getPostedBy());
+                table.addCell(String.valueOf(announcement.getViews()));
+            }
+
+            document.add(table);
+            document.close();
+
+            showToast("Report saved to: " + path);
+        } catch (Exception e) {
+            e.printStackTrace();
+            showToast("Error generating report");
+        }
+    }
 
     private void showFinancialReports(VBox center) {
         var container = new VBox(15);
-        container.setPadding(new Insets(15));
-        container.setStyle("-fx-background-color: " + "#ffffff" + ";");
+        // No padding - center container already has 20px padding
 
         var titleLabel = new Label("Financial Reports");
         titleLabel.setStyle("-fx-font-size: 16; -fx-font-weight: bold;");
@@ -5573,18 +5917,15 @@ public class App extends Application {
         tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
         tabPane.getStyleClass().add("tab-pane");
 
-        // Tab 1: User Authentication
-        Tab authTab = new Tab("User Authentication", createUserAuthenticationPanel());
-        authTab.getStyleClass().add("tab");
-
-        // Tab 2: Data Encryption (includes password hashing with BCrypt)
+        // Tab 1: Data Encryption (includes password hashing with BCrypt)
         Tab encryptionTab = new Tab("Data Encryption", createDataEncryptionPanel());
         encryptionTab.getStyleClass().add("tab");
 
         // Note: Automatic Backups moved to Maintenance tab to avoid duplication
         // Note: Role-Based Access moved to User & Access tab
+        // Note: User Authentication removed - managed in User & Access tab
 
-        tabPane.getTabs().addAll(authTab, encryptionTab);
+        tabPane.getTabs().add(encryptionTab);
         VBox.setVgrow(tabPane, Priority.ALWAYS);
 
         updateDashboardContent(center, "Security Features", tabPane);
@@ -5592,7 +5933,6 @@ public class App extends Application {
 
     private VBox createUserAuthenticationPanel() {
         var panel = new VBox(15);
-        panel.setPadding(new Insets(20));
 
         var titleLabel = new Label("User Authentication Management");
         titleLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold;");
@@ -5667,7 +6007,6 @@ public class App extends Application {
 
     private VBox createRoleBasedAccessPanel() {
         var panel = new VBox(15);
-        panel.setPadding(new Insets(20));
 
         var titleLabel = new Label("Role-Based Access Control");
         titleLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold;");
@@ -5723,7 +6062,6 @@ public class App extends Application {
 
     private VBox createDataEncryptionPanel() {
         var panel = new VBox(15);
-        panel.setPadding(new Insets(20));
 
         var titleLabel = new Label("Data Encryption & Password Security");
         titleLabel.getStyleClass().add("text-heading-sm");
@@ -5869,7 +6207,6 @@ public class App extends Application {
 
     private VBox createDocumentExportPanel(String documentType) {
         VBox panel = new VBox(20);
-        panel.setPadding(new Insets(20));
 
         // Title
         Label titleLabel = new Label("Select Export Destination: " + documentType);
@@ -6124,7 +6461,6 @@ public class App extends Application {
 
     private VBox createSMSConfigurationTab() {
         VBox panel = new VBox(20);
-        panel.setPadding(new Insets(20));
 
         Label titleLabel = new Label("SMS Service Configuration");
         titleLabel.getStyleClass().add("text-heading-sm");
@@ -6269,7 +6605,6 @@ public class App extends Application {
 
     private VBox createSMSTemplatesTab() {
         VBox panel = new VBox(20);
-        panel.setPadding(new Insets(20));
 
         Label titleLabel = new Label("SMS Message Templates");
         titleLabel.getStyleClass().add("text-heading-sm");
@@ -6391,7 +6726,6 @@ public class App extends Application {
 
     private VBox createSMSTestTab() {
         VBox panel = new VBox(20);
-        panel.setPadding(new Insets(20));
 
         Label titleLabel = new Label("Send Test SMS");
         titleLabel.getStyleClass().add("text-heading-sm");
@@ -6538,16 +6872,16 @@ public class App extends Application {
         return panel;
     }
 
+    @SuppressWarnings("unchecked")
     private VBox createSMSLogsTab() {
         VBox panel = new VBox(20);
-        panel.setPadding(new Insets(20));
 
         Label titleLabel = new Label("SMS Transaction Logs");
         titleLabel.getStyleClass().add("text-heading-sm");
 
         // Create table for SMS logs
         TableView<SMSLogEntry> smsLogsTable = new TableView<>();
-        smsLogsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        smsLogsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
         smsLogsTable.setPrefHeight(400);
 
         TableColumn<SMSLogEntry, Integer> idCol = new TableColumn<>("ID");
@@ -6574,7 +6908,8 @@ public class App extends Application {
         timestampCol.setCellValueFactory(new PropertyValueFactory<>("timestamp"));
         timestampCol.setPrefWidth(150);
 
-        smsLogsTable.getColumns().addAll(idCol, phoneCol, messageCol, statusCol, messageIdCol, timestampCol);
+        var smsColumns = smsLogsTable.getColumns();
+        smsColumns.addAll(idCol, phoneCol, messageCol, statusCol, messageIdCol, timestampCol);
 
         // Load SMS logs
         Button refreshBtn = new Button("Refresh Logs", new FontIcon(FontAwesomeSolid.SYNC));
@@ -6688,7 +7023,6 @@ public class App extends Application {
 
     private VBox createDatabaseBackupPanel() {
         VBox panel = new VBox(20);
-        panel.setPadding(new Insets(20));
 
         // Database Info Section
         Label infoTitle = new Label("Database Information");
@@ -6800,7 +7134,6 @@ public class App extends Application {
 
     private VBox createSystemHealthPanel() {
         VBox panel = new VBox(20);
-        panel.setPadding(new Insets(20));
 
         Label title = new Label("System Health & Statistics");
         title.setStyle("-fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: " + "#1a1a1a" + ";");

@@ -97,6 +97,14 @@
                 <configuration>
                     <source>21</source>
                     <target>21</target>
+                    <compilerArgs>
+                        <arg>-Xlint:unchecked</arg>
+                        <arg>-Xlint:deprecation</arg>
+                        <arg>--add-opens</arg>
+                        <arg>javafx.controls/javafx.scene.control.skin=ALL-UNNAMED</arg>
+                        <arg>--add-opens</arg>
+                        <arg>javafx.graphics/javafx.scene=ALL-UNNAMED</arg>
+                    </compilerArgs>
                 </configuration>
             </plugin>
             <plugin>
@@ -105,12 +113,7 @@
                 <version>3.1.0</version>
                 <configuration>
                     <mainClass>com.example.Launcher</mainClass>
-                    <args>
-                        <arg>-classpath</arg>
-                        <classpath/>
-                        <arg>com.example.Launcher</arg>
-                    </args>
-                    <commandlineArgs>-Xms256m -Xmx512m</commandlineArgs>
+                    <commandlineArgs>-Xms256m -Xmx512m --add-opens javafx.controls/javafx.scene.control.skin=ALL-UNNAMED --add-opens javafx.graphics/javafx.scene=ALL-UNNAMED</commandlineArgs>
                 </configuration>
             </plugin>
             <plugin>

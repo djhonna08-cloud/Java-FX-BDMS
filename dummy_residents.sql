@@ -1,0 +1,60 @@
+-- Dummy Resident Data for Barangay San Marino BDMS
+-- All residents have phone number: 09563052862
+-- Run this SQL in your H2 database console or via the application
+
+-- Insert 50 dummy residents with Filipino names
+INSERT INTO residents (first_name, middle_name, last_name, birth_date, gender, address, phone_number, role, family_id, house_unit, street, subdivision, gate_color, vaccination_count) VALUES
+('Juan', 'Santos', 'Dela Cruz', '1985-03-15', 'Male', 'Block 1 Lot 5, San Marino', '09563052862', 'Resident', 1, '1-5', 'Acacia Street', 'San Marino', 'Blue', 2),
+('Maria', 'Garcia', 'Reyes', '1990-07-22', 'Female', 'Block 2 Lot 10, San Marino', '09563052862', 'Resident', 2, '2-10', 'Mahogany Avenue', 'San Marino', 'Green', 3),
+('Pedro', 'Ramos', 'Santos', '1978-11-08', 'Male', 'Block 3 Lot 15, San Marino', '09563052862', 'Resident', 3, '3-15', 'Narra Road', 'San Marino', 'Red', 2),
+('Ana', 'Lopez', 'Cruz', '1995-05-30', 'Female', 'Block 1 Lot 8, San Marino', '09563052862', 'Resident', 4, '1-8', 'Acacia Street', 'San Marino', 'Yellow', 3),
+('Jose', 'Mendoza', 'Torres', '1982-09-12', 'Male', 'Block 4 Lot 20, San Marino', '09563052862', 'Resident', 5, '4-20', 'Yakal Drive', 'San Marino', 'Blue', 2),
+('Rosa', 'Fernandez', 'Gonzales', '1988-02-18', 'Female', 'Block 2 Lot 12, San Marino', '09563052862', 'Resident', 6, '2-12', 'Mahogany Avenue', 'San Marino', 'Green', 3),
+('Miguel', 'Aquino', 'Bautista', '1975-12-25', 'Male', 'Block 5 Lot 25, San Marino', '09563052862', 'Resident', 7, '5-25', 'Molave Street', 'San Marino', 'Red', 2),
+('Carmen', 'Villanueva', 'Ramos', '1992-08-07', 'Female', 'Block 3 Lot 18, San Marino', '09563052862', 'Resident', 8, '3-18', 'Narra Road', 'San Marino', 'Yellow', 3),
+('Antonio', 'Castillo', 'Flores', '1980-04-14', 'Male', 'Block 1 Lot 3, San Marino', '09563052862', 'Resident', 9, '1-3', 'Acacia Street', 'San Marino', 'Blue', 2),
+('Elena', 'Morales', 'Diaz', '1987-10-20', 'Female', 'Block 6 Lot 30, San Marino', '09563052862', 'Resident', 10, '6-30', 'Ipil Avenue', 'San Marino', 'Green', 3),
+('Roberto', 'Navarro', 'Perez', '1983-06-05', 'Male', 'Block 2 Lot 14, San Marino', '09563052862', 'Resident', 11, '2-14', 'Mahogany Avenue', 'San Marino', 'Red', 2),
+('Luz', 'Gutierrez', 'Martinez', '1991-01-28', 'Female', 'Block 4 Lot 22, San Marino', '09563052862', 'Resident', 12, '4-22', 'Yakal Drive', 'San Marino', 'Yellow', 3),
+('Carlos', 'Jimenez', 'Hernandez', '1976-09-16', 'Male', 'Block 3 Lot 16, San Marino', '09563052862', 'Resident', 13, '3-16', 'Narra Road', 'San Marino', 'Blue', 2),
+('Sofia', 'Alvarez', 'Lopez', '1994-03-11', 'Female', 'Block 5 Lot 27, San Marino', '09563052862', 'Resident', 14, '5-27', 'Molave Street', 'San Marino', 'Green', 3),
+('Fernando', 'Romero', 'Garcia', '1981-07-23', 'Male', 'Block 1 Lot 7, San Marino', '09563052862', 'Resident', 15, '1-7', 'Acacia Street', 'San Marino', 'Red', 2),
+('Isabel', 'Vargas', 'Sanchez', '1989-11-09', 'Female', 'Block 6 Lot 32, San Marino', '09563052862', 'Resident', 16, '6-32', 'Ipil Avenue', 'San Marino', 'Yellow', 3),
+('Ricardo', 'Ortiz', 'Rivera', '1977-05-17', 'Male', 'Block 2 Lot 11, San Marino', '09563052862', 'Resident', 17, '2-11', 'Mahogany Avenue', 'San Marino', 'Blue', 2),
+('Teresa', 'Medina', 'Gomez', '1993-12-02', 'Female', 'Block 4 Lot 24, San Marino', '09563052862', 'Resident', 18, '4-24', 'Yakal Drive', 'San Marino', 'Green', 3),
+('Manuel', 'Aguilar', 'Ruiz', '1979-08-26', 'Male', 'Block 3 Lot 19, San Marino', '09563052862', 'Resident', 19, '3-19', 'Narra Road', 'San Marino', 'Red', 2),
+('Patricia', 'Herrera', 'Moreno', '1986-02-13', 'Female', 'Block 5 Lot 28, San Marino', '09563052862', 'Resident', 20, '5-28', 'Molave Street', 'San Marino', 'Yellow', 3),
+('Rodrigo', 'Silva', 'Castro', '1984-10-31', 'Male', 'Block 1 Lot 6, San Marino', '09563052862', 'Resident', 21, '1-6', 'Acacia Street', 'San Marino', 'Blue', 2),
+('Gloria', 'Mendez', 'Ortega', '1990-04-19', 'Female', 'Block 6 Lot 33, San Marino', '09563052862', 'Resident', 22, '6-33', 'Ipil Avenue', 'San Marino', 'Green', 3),
+('Alfredo', 'Rojas', 'Dominguez', '1974-06-08', 'Male', 'Block 2 Lot 13, San Marino', '09563052862', 'Resident', 23, '2-13', 'Mahogany Avenue', 'San Marino', 'Red', 2),
+('Angelica', 'Pena', 'Jimenez', '1996-09-24', 'Female', 'Block 4 Lot 23, San Marino', '09563052862', 'Resident', 24, '4-23', 'Yakal Drive', 'San Marino', 'Yellow', 3),
+('Eduardo', 'Soto', 'Alvarez', '1973-01-15', 'Male', 'Block 3 Lot 17, San Marino', '09563052862', 'Resident', 25, '3-17', 'Narra Road', 'San Marino', 'Blue', 2),
+('Cristina', 'Campos', 'Romero', '1997-05-06', 'Female', 'Block 5 Lot 26, San Marino', '09563052862', 'Resident', 26, '5-26', 'Molave Street', 'San Marino', 'Green', 3),
+('Francisco', 'Vega', 'Vargas', '1972-11-21', 'Male', 'Block 1 Lot 4, San Marino', '09563052862', 'Resident', 27, '1-4', 'Acacia Street', 'San Marino', 'Red', 2),
+('Margarita', 'Nunez', 'Ortiz', '1998-07-14', 'Female', 'Block 6 Lot 31, San Marino', '09563052862', 'Resident', 28, '6-31', 'Ipil Avenue', 'San Marino', 'Yellow', 3),
+('Raul', 'Guerrero', 'Medina', '1971-03-29', 'Male', 'Block 2 Lot 9, San Marino', '09563052862', 'Resident', 29, '2-9', 'Mahogany Avenue', 'San Marino', 'Blue', 2),
+('Beatriz', 'Prieto', 'Aguilar', '1999-12-10', 'Female', 'Block 4 Lot 21, San Marino', '09563052862', 'Resident', 30, '4-21', 'Yakal Drive', 'San Marino', 'Green', 3),
+('Enrique', 'Molina', 'Herrera', '1970-08-03', 'Male', 'Block 3 Lot 14, San Marino', '09563052862', 'Resident', 31, '3-14', 'Narra Road', 'San Marino', 'Red', 2),
+('Dolores', 'Blanco', 'Silva', '2000-02-27', 'Female', 'Block 5 Lot 29, San Marino', '09563052862', 'Resident', 32, '5-29', 'Molave Street', 'San Marino', 'Yellow', 3),
+('Arturo', 'Suarez', 'Mendez', '1969-10-12', 'Male', 'Block 1 Lot 2, San Marino', '09563052862', 'Resident', 33, '1-2', 'Acacia Street', 'San Marino', 'Blue', 2),
+('Concepcion', 'Pascual', 'Rojas', '2001-06-18', 'Female', 'Block 6 Lot 34, San Marino', '09563052862', 'Resident', 34, '6-34', 'Ipil Avenue', 'San Marino', 'Green', 3),
+('Domingo', 'Fuentes', 'Pena', '1968-04-05', 'Male', 'Block 2 Lot 8, San Marino', '09563052862', 'Resident', 35, '2-8', 'Mahogany Avenue', 'San Marino', 'Red', 2),
+('Esperanza', 'Lara', 'Soto', '2002-11-22', 'Female', 'Block 4 Lot 19, San Marino', '09563052862', 'Resident', 36, '4-19', 'Yakal Drive', 'San Marino', 'Yellow', 3),
+('Gabriel', 'Cabrera', 'Campos', '1967-07-30', 'Male', 'Block 3 Lot 13, San Marino', '09563052862', 'Resident', 37, '3-13', 'Narra Road', 'San Marino', 'Blue', 2),
+('Felicidad', 'Leon', 'Vega', '2003-03-16', 'Female', 'Block 5 Lot 24, San Marino', '09563052862', 'Resident', 38, '5-24', 'Molave Street', 'San Marino', 'Green', 3),
+('Gregorio', 'Marquez', 'Nunez', '1966-09-08', 'Male', 'Block 1 Lot 1, San Marino', '09563052862', 'Resident', 39, '1-1', 'Acacia Street', 'San Marino', 'Red', 2),
+('Herminia', 'Iglesias', 'Guerrero', '2004-05-25', 'Female', 'Block 6 Lot 35, San Marino', '09563052862', 'Resident', 40, '6-35', 'Ipil Avenue', 'San Marino', 'Yellow', 3),
+('Ignacio', 'Caballero', 'Prieto', '1965-01-19', 'Male', 'Block 2 Lot 7, San Marino', '09563052862', 'Resident', 41, '2-7', 'Mahogany Avenue', 'San Marino', 'Blue', 2),
+('Josefa', 'Nieto', 'Molina', '2005-08-11', 'Female', 'Block 4 Lot 18, San Marino', '09563052862', 'Resident', 42, '4-18', 'Yakal Drive', 'San Marino', 'Green', 3),
+('Lorenzo', 'Serrano', 'Blanco', '1964-12-04', 'Male', 'Block 3 Lot 12, San Marino', '09563052862', 'Resident', 43, '3-12', 'Narra Road', 'San Marino', 'Red', 2),
+('Milagros', 'Gallego', 'Suarez', '2006-04-28', 'Female', 'Block 5 Lot 23, San Marino', '09563052862', 'Resident', 44, '5-23', 'Molave Street', 'San Marino', 'Yellow', 3),
+('Nestor', 'Santana', 'Pascual', '1963-10-17', 'Male', 'Block 1 Lot 9, San Marino', '09563052862', 'Resident', 45, '1-9', 'Acacia Street', 'San Marino', 'Blue', 2),
+('Ofelia', 'Rubio', 'Fuentes', '2007-02-09', 'Female', 'Block 6 Lot 36, San Marino', '09563052862', 'Resident', 46, '6-36', 'Ipil Avenue', 'San Marino', 'Green', 3),
+('Pablo', 'Mora', 'Lara', '1962-06-23', 'Male', 'Block 2 Lot 6, San Marino', '09563052862', 'Resident', 47, '2-6', 'Mahogany Avenue', 'San Marino', 'Red', 2),
+('Remedios', 'Delgado', 'Cabrera', '2008-09-15', 'Female', 'Block 4 Lot 17, San Marino', '09563052862', 'Resident', 48, '4-17', 'Yakal Drive', 'San Marino', 'Yellow', 3),
+('Salvador', 'Bravo', 'Leon', '1961-03-07', 'Male', 'Block 3 Lot 11, San Marino', '09563052862', 'Resident', 49, '3-11', 'Narra Road', 'San Marino', 'Blue', 2),
+('Trinidad', 'Crespo', 'Marquez', '2009-11-30', 'Female', 'Block 5 Lot 22, San Marino', '09563052862', 'Resident', 50, '5-22', 'Molave Street', 'San Marino', 'Green', 3);
+
+-- Verify the insert
+SELECT COUNT(*) as total_residents FROM residents;
+SELECT * FROM residents ORDER BY id DESC LIMIT 10;

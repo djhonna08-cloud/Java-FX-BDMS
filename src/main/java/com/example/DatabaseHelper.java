@@ -220,12 +220,20 @@ public class DatabaseHelper {
                         "INSERT INTO roles (name, description) VALUES ('Barangay Treasurer', 'Manages financial records and budgets')",
                         "INSERT INTO roles (name, description) VALUES ('Kagawads', 'Barangay council members with limited access')",
                         "INSERT INTO roles (name, description) VALUES ('Barangay Health Workers', 'Manages health and resident information')",
-                        "INSERT INTO roles (name, description) VALUES ('Barangay Tanods', 'Peace and order officers with basic access')"
+                        "INSERT INTO roles (name, description) VALUES ('Barangay Tanods', 'Peace and order officers with basic access')",
+                        "INSERT INTO roles (name, description) VALUES ('Resident', 'Basic resident role with minimal system access')"
                     };
                     for (String insert : defaultRoles) {
                         stmt.execute(insert);
                     }
                     System.out.println("Default roles inserted.");
+                } else {
+                    // Check if Resident role exists, add if missing
+                    ResultSet residentCheck = stmt.executeQuery("SELECT COUNT(*) FROM roles WHERE name = 'Resident'");
+                    if (residentCheck.next() && residentCheck.getInt(1) == 0) {
+                        stmt.execute("INSERT INTO roles (name, description) VALUES ('Resident', 'Basic resident role with minimal system access')");
+                        System.out.println("✓ Added missing 'Resident' role to database");
+                    }
                 }
             }
 
@@ -264,6 +272,7 @@ public class DatabaseHelper {
     /**
      * Authenticate a user with username and password
      * Supports both plain text passwords (legacy) and BCrypt hashed passwords
+     * Updates last login timestamp on successful authentication
      * @param username The username (case-insensitive)
      * @param password The password
      * @return The user's role if authentication succeeds, null otherwise
@@ -283,6 +292,8 @@ public class DatabaseHelper {
                 if (storedPassword.startsWith("$2a$") || storedPassword.startsWith("$2b$") || storedPassword.startsWith("$2y$")) {
                     // BCrypt hashed password - use BCrypt.checkpw()
                     if (BCrypt.checkpw(password, storedPassword)) {
+                        // Update last login timestamp
+                        updateLastLogin(username);
                         return role;
                     }
                 } else {
@@ -292,6 +303,8 @@ public class DatabaseHelper {
                         String hashedPassword = BCrypt.hashpw(password, BCrypt.gensalt(12));
                         updateUserPassword(username, hashedPassword);
                         System.out.println("✓ Auto-upgraded password to BCrypt for user: " + username);
+                        // Update last login timestamp
+                        updateLastLogin(username);
                         return role;
                     }
                 }
@@ -300,6 +313,24 @@ public class DatabaseHelper {
             e.printStackTrace();
         }
         return null;
+    }
+    
+    /**
+     * Update last login timestamp for a user
+     * @param username The username
+     */
+    private static void updateLastLogin(String username) {
+        String sql = "UPDATE users SET last_login = ? WHERE LOWER(username) = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            String timestamp = java.time.LocalDateTime.now()
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            pstmt.setString(1, timestamp);
+            pstmt.setString(2, username.toLowerCase());
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            // Column might not exist in older schemas, ignore
+        }
     }
     
     /**
@@ -489,9 +520,14 @@ public class DatabaseHelper {
             ResultSet rs = pstmt.executeQuery();
             if (rs.next()) {
                 username = rs.getString("username");
+            } else {
+                System.err.println("❌ User not found with ID: " + userId);
+                return false;
             }
         } catch (SQLException e) {
+            System.err.println("❌ Error getting username for user ID " + userId + ": " + e.getMessage());
             e.printStackTrace();
+            return false;
         }
 
         String sql = "DELETE FROM users WHERE id = ?";
@@ -501,12 +537,17 @@ public class DatabaseHelper {
             int rowsAffected = pstmt.executeUpdate();
             if (rowsAffected > 0) {
                 logAction("System", "User Deleted", "Deleted user: " + username + " (ID: " + userId + ")", "User Management");
+                System.out.println("✓ Successfully deleted user: " + username + " (ID: " + userId + ")");
                 return true;
+            } else {
+                System.err.println("❌ No rows affected when deleting user ID: " + userId);
+                return false;
             }
         } catch (SQLException e) {
+            System.err.println("❌ SQL Error deleting user ID " + userId + ": " + e.getMessage());
             e.printStackTrace();
+            return false;
         }
-        return false;
     }
 
     /**
