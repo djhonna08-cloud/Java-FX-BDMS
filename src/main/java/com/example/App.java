@@ -1,4 +1,4 @@
-package com.example;
+﻿package com.example;
 
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -80,8 +80,8 @@ public class App extends Application {
     private TableView<Announcement> announcementsTable;
     
     // Enhanced table references
-    private TableUtils.EnhancedTable<User> enhancedUsersTable;
-    private TableView<User> usersManagementTable;
+    private TableUtils.EnhancedTable<ResidentUserRow> enhancedUsersTable;
+    private TableView<ResidentUserRow> usersManagementTable;
     private TextField searchField; // Promoted to class level for access in other methods
     private Pagination pagination;
     private static final int ROWS_PER_PAGE = 15;
@@ -97,6 +97,10 @@ public class App extends Application {
     private Button selectedNavButton;
     private Rectangle navIndicator;
     private VBox navMenu;
+    private VBox sidebarVBox;           // reference to sidebar VBox for collapse
+    private boolean sidebarCollapsed = false;
+    private static final double SIDEBAR_EXPANDED = 240;
+    private static final double SIDEBAR_COLLAPSED = 60;
 
     // Submenu state (persists between restarts)
     private boolean userSubmenuOpen = false;
@@ -304,7 +308,7 @@ public class App extends Application {
 
         var card = new VBox(20, header, formVBox);
         card.setAlignment(Pos.CENTER);
-        card.setStyle("-fx-background-color: rgba(255, 255, 255, 0.95); -fx-padding: 30; -fx-border-radius: 10; -fx-background-radius: 10;");
+        card.getStyleClass().add("card-login");
 
         // Create background image view
         ImageView backgroundView = new ImageView();
@@ -331,13 +335,13 @@ public class App extends Application {
                     System.out.println("✓ Background loaded from file path");
                 } else {
                     System.out.println("✗ Background file not found");
-                    backgroundView.setStyle("-fx-background-color: #e8e8e8;");
+                    backgroundView.getStyleClass().add("bg-fallback");
                 }
             }
         } catch (Exception e) {
             System.err.println("✗ Error loading background: " + e.getMessage());
             e.printStackTrace();
-            backgroundView.setStyle("-fx-background-color: #e8e8e8;");
+            backgroundView.getStyleClass().add("bg-fallback");
         }
 
         // Center the card on the background
@@ -428,35 +432,36 @@ public class App extends Application {
         topBar.getStyleClass().add("top-bar");
         topBar.setAlignment(Pos.CENTER);
 
-        // Sidebar
+        // ── Sidebar ──────────────────────────────────────────────────────────
         ImageView dashboardLogoView = new ImageView();
         try {
             var resourceStream = getClass().getResourceAsStream("/assets/logo.png");
             if (resourceStream != null) {
                 var logoImage = new Image(resourceStream);
                 dashboardLogoView.setImage(logoImage);
-                dashboardLogoView.setFitWidth(180);
+                dashboardLogoView.setFitWidth(160);
                 dashboardLogoView.setPreserveRatio(true);
             } else {
                 File logoFile = new File("src/assets/logo.png");
                 if (logoFile.exists()) {
                     var logoImage = new Image(logoFile.toURI().toString());
                     dashboardLogoView.setImage(logoImage);
-                    dashboardLogoView.setFitWidth(180);
+                    dashboardLogoView.setFitWidth(160);
                     dashboardLogoView.setPreserveRatio(true);
                 }
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
+
+        // Logo container — hidden when collapsed
         var topBrand = new HBox(dashboardLogoView);
         topBrand.setAlignment(Pos.CENTER);
-        topBrand.setPadding(new Insets(24, 0, 24, 0));
+        topBrand.setPadding(new Insets(16, 0, 16, 0));
 
         navMenu = new VBox(4);
         navMenu.getStyleClass().add("sidebar-menu");
 
-        // Selection underline that slides beneath the active nav item
         navIndicator = new Rectangle(0, 3);
         navIndicator.getStyleClass().add("nav-indicator");
         navIndicator.setVisible(false);
@@ -464,80 +469,42 @@ public class App extends Application {
         var menuStack = new StackPane(navMenu, navIndicator);
         StackPane.setAlignment(navIndicator, Pos.BOTTOM_LEFT);
 
-
         var center = new VBox(16);
         center.setPadding(new Insets(18));
 
-        var overviewBtn = createSidebarButton("Analytics & Overview", FontAwesomeSolid.CHART_PIE);
+        var overviewBtn     = createSidebarButton("Analytics & Overview",       FontAwesomeSolid.CHART_PIE);
         overviewBtn.setUserData("overview");
-        var usersBtn = createSidebarButton("User & Access", FontAwesomeSolid.USERS_COG);
+        var usersBtn        = createSidebarButton("User & Access",               FontAwesomeSolid.USERS_COG);
         usersBtn.setUserData("users");
-        var residentBtn = createSidebarButton("Residents", FontAwesomeSolid.ADDRESS_BOOK);
+        var residentBtn     = createSidebarButton("Residents",                   FontAwesomeSolid.ADDRESS_BOOK);
         residentBtn.setUserData("resident");
-        var certificatesBtn = createSidebarButton("Certificates & Clearances", FontAwesomeSolid.FILE_PDF);
+        var certificatesBtn = createSidebarButton("Certificates & Clearances",   FontAwesomeSolid.FILE_PDF);
         certificatesBtn.setUserData("certificates");
-        var complaintsBtn = createSidebarButton("Complaints & Incidents", FontAwesomeSolid.EXCLAMATION_CIRCLE);
+        var complaintsBtn   = createSidebarButton("Complaints & Incidents",      FontAwesomeSolid.EXCLAMATION_CIRCLE);
         complaintsBtn.setUserData("complaints");
-        var announcementsBtn = createSidebarButton("Announcement Portal", FontAwesomeSolid.BELL);
+        var announcementsBtn= createSidebarButton("Announcement Portal",         FontAwesomeSolid.BELL);
         announcementsBtn.setUserData("announcements");
-        var financialBtn = createSidebarButton("Financial Reports", FontAwesomeSolid.CHART_LINE);
+        var financialBtn    = createSidebarButton("Financial Reports",           FontAwesomeSolid.CHART_LINE);
         financialBtn.setUserData("financial");
-        var securityBtn = (Button) createSidebarButton("Security Features", FontAwesomeSolid.LOCK);
+        var securityBtn     = (Button) createSidebarButton("Security Features",  FontAwesomeSolid.LOCK);
         securityBtn.setUserData("security");
-        var systemBtn = createSidebarButton("System Config", FontAwesomeSolid.COGS);
+        var systemBtn       = createSidebarButton("System Config",               FontAwesomeSolid.COGS);
         systemBtn.setUserData("system");
-        var maintenanceBtn = createSidebarButton("Maintenance", FontAwesomeSolid.SHIELD_ALT);
+        var maintenanceBtn  = createSidebarButton("Maintenance",                 FontAwesomeSolid.SHIELD_ALT);
         maintenanceBtn.setUserData("maintenance");
 
-        // Apply permission-based visibility
+        // Permission-based visibility
         Map<String, String> userPermissions = DatabaseHelper.getPermissions(currentRole);
-        
-        // Hide or disable menu items based on permissions
-        if ("None".equals(userPermissions.get("Analytics & Overview"))) {
-            overviewBtn.setVisible(false);
-            overviewBtn.setManaged(false);
-        }
-        if ("None".equals(userPermissions.get("User & Access"))) {
-            usersBtn.setVisible(false);
-            usersBtn.setManaged(false);
-        }
-        if ("None".equals(userPermissions.get("Resident Data"))) {
-            residentBtn.setVisible(false);
-            residentBtn.setManaged(false);
-        }
-        if ("None".equals(userPermissions.get("Certificates & Clearances"))) {
-            certificatesBtn.setVisible(false);
-            certificatesBtn.setManaged(false);
-        }
-        if ("None".equals(userPermissions.get("Complaints & Incidents"))) {
-            complaintsBtn.setVisible(false);
-            complaintsBtn.setManaged(false);
-        }
-        if ("None".equals(userPermissions.get("Announcements"))) {
-            announcementsBtn.setVisible(false);
-            announcementsBtn.setManaged(false);
-        }
-        if ("None".equals(userPermissions.get("Financial Reports"))) {
-            financialBtn.setVisible(false);
-            financialBtn.setManaged(false);
-        }
-        if ("None".equals(userPermissions.get("Security Features"))) {
-            securityBtn.setVisible(false);
-            securityBtn.setManaged(false);
-        }
-        if ("None".equals(userPermissions.get("System Config"))) {
-            systemBtn.setVisible(false);
-            systemBtn.setManaged(false);
-        }
-        if ("None".equals(userPermissions.get("Maintenance"))) {
-            maintenanceBtn.setVisible(false);
-            maintenanceBtn.setManaged(false);
-        }
-
-
-
-
-
+        if ("None".equals(userPermissions.get("Analytics & Overview")))       { overviewBtn.setVisible(false);     overviewBtn.setManaged(false); }
+        if ("None".equals(userPermissions.get("User & Access")))              { usersBtn.setVisible(false);        usersBtn.setManaged(false); }
+        if ("None".equals(userPermissions.get("Resident Data")))              { residentBtn.setVisible(false);     residentBtn.setManaged(false); }
+        if ("None".equals(userPermissions.get("Certificates & Clearances")))  { certificatesBtn.setVisible(false); certificatesBtn.setManaged(false); }
+        if ("None".equals(userPermissions.get("Complaints & Incidents")))     { complaintsBtn.setVisible(false);   complaintsBtn.setManaged(false); }
+        if ("None".equals(userPermissions.get("Announcements")))              { announcementsBtn.setVisible(false);announcementsBtn.setManaged(false); }
+        if ("None".equals(userPermissions.get("Financial Reports")))          { financialBtn.setVisible(false);    financialBtn.setManaged(false); }
+        if ("None".equals(userPermissions.get("Security Features")))          { securityBtn.setVisible(false);     securityBtn.setManaged(false); }
+        if ("None".equals(userPermissions.get("System Config")))              { systemBtn.setVisible(false);       systemBtn.setManaged(false); }
+        if ("None".equals(userPermissions.get("Maintenance")))                { maintenanceBtn.setVisible(false);  maintenanceBtn.setManaged(false); }
 
         var logoutBtn = createSidebarButton("Logout", FontAwesomeSolid.SIGN_OUT_ALT);
         logoutBtn.setOnAction(e -> {
@@ -545,102 +512,69 @@ public class App extends Application {
             primaryStage.setScene(createLoginScene());
             primaryStage.centerOnScreen();
         });
-        
-        // Add spacer before logout to separate it from other menu items
+
         Region spacer = new Region();
         VBox.setVgrow(spacer, Priority.ALWAYS);
 
-        // Add navigation items to sidebar
-        navMenu.getChildren().addAll(overviewBtn, usersBtn, residentBtn, certificatesBtn, complaintsBtn, announcementsBtn, financialBtn, (Button) securityBtn, systemBtn, maintenanceBtn, spacer, logoutBtn);
+        navMenu.getChildren().addAll(overviewBtn, usersBtn, residentBtn, certificatesBtn,
+            complaintsBtn, announcementsBtn, financialBtn, (Button) securityBtn,
+            systemBtn, maintenanceBtn, spacer, logoutBtn);
 
-        // Restore last active section (if any)
-        if ("users".equals(activeSection)) {
-            setActiveNav(usersBtn);
-        } else if ("resident".equals(activeSection)) {
-            setActiveNav(residentBtn);
-        } else if ("certificates".equals(activeSection)) {
-            setActiveNav(certificatesBtn);
-        } else if ("complaints".equals(activeSection)) {
-            setActiveNav(complaintsBtn);
-        } else if ("announcements".equals(activeSection)) {
-            setActiveNav(announcementsBtn);
-        } else if ("financial".equals(activeSection)) {
-            setActiveNav(financialBtn);
-        } else if ("security".equals(activeSection)) {
-            setActiveNav((Button) securityBtn);
-        } else if ("system".equals(activeSection)) {
-            setActiveNav(systemBtn);
-        } else if ("maintenance".equals(activeSection)) {
-            setActiveNav(maintenanceBtn);
-        } else {
-            setActiveNav(overviewBtn);
-        }
+        // ── Toggle button (chevron) ───────────────────────────────────────────
+        FontIcon toggleIcon = new FontIcon(FontAwesomeSolid.CHEVRON_LEFT);
+        toggleIcon.setIconSize(14);
+        toggleIcon.getStyleClass().add("sidebar-toggle-icon");
+        Button toggleBtn = new Button("", toggleIcon);
+        toggleBtn.getStyleClass().add("sidebar-toggle-btn");
+        toggleBtn.setMaxWidth(Double.MAX_VALUE);
+        toggleBtn.setOnAction(e -> toggleSidebar(toggleIcon, topBrand, navMenu));
 
-        // Navigation actions
-        overviewBtn.setOnAction(e -> {
-            setActiveNav(overviewBtn);
-            showOverview(center);
-        });
-        usersBtn.setOnAction(e -> {
-            setActiveNav(usersBtn);
-            showUserAndAccess(center);
-        });
-        residentBtn.setOnAction(e -> {
-            setActiveNav(residentBtn);
-            showResidentControl(center);
-        });
-        certificatesBtn.setOnAction(e -> {
-            setActiveNav(certificatesBtn);
-            showCertificatesAndClearances(center);
-        });
-        complaintsBtn.setOnAction(e -> {
-            setActiveNav(complaintsBtn);
-            showComplaintsAndIncidents(center);
-        });
-        announcementsBtn.setOnAction(e -> {
-            setActiveNav(announcementsBtn);
-            showAnnouncementsPortal(center);
-        });
-        financialBtn.setOnAction(e -> {
-            setActiveNav(financialBtn);
-            showFinancialReports(center);
-        });
-        ((Button) securityBtn).setOnAction(e -> {
-            setActiveNav((Button) securityBtn);
-            showSecurityFeatures(center);
-        });
-        systemBtn.setOnAction(e -> {
-            setActiveNav(systemBtn);
-            showSystemConfiguration(center);
-        });
-        maintenanceBtn.setOnAction(e -> {
-            setActiveNav(maintenanceBtn);
-            showMaintenance(center);
-        });
+        // ── Restore active section ────────────────────────────────────────────
+        if      ("users".equals(activeSection))         setActiveNav(usersBtn);
+        else if ("resident".equals(activeSection))      setActiveNav(residentBtn);
+        else if ("certificates".equals(activeSection))  setActiveNav(certificatesBtn);
+        else if ("complaints".equals(activeSection))    setActiveNav(complaintsBtn);
+        else if ("announcements".equals(activeSection)) setActiveNav(announcementsBtn);
+        else if ("financial".equals(activeSection))     setActiveNav(financialBtn);
+        else if ("security".equals(activeSection))      setActiveNav((Button) securityBtn);
+        else if ("system".equals(activeSection))        setActiveNav(systemBtn);
+        else if ("maintenance".equals(activeSection))   setActiveNav(maintenanceBtn);
+        else                                            setActiveNav(overviewBtn);
 
-        // Move the brand header inside the menu so it aligns with nav items
+        // ── Navigation actions ────────────────────────────────────────────────
+        overviewBtn.setOnAction(e -> { setActiveNav(overviewBtn);           showOverview(center); });
+        usersBtn.setOnAction(e ->    { setActiveNav(usersBtn);              showUserAndAccess(center); });
+        residentBtn.setOnAction(e -> { setActiveNav(residentBtn);           showResidentControl(center); });
+        certificatesBtn.setOnAction(e -> { setActiveNav(certificatesBtn);   showCertificatesAndClearances(center); });
+        complaintsBtn.setOnAction(e -> { setActiveNav(complaintsBtn);       showComplaintsAndIncidents(center); });
+        announcementsBtn.setOnAction(e -> { setActiveNav(announcementsBtn); showAnnouncementsPortal(center); });
+        financialBtn.setOnAction(e -> { setActiveNav(financialBtn);         showFinancialReports(center); });
+        ((Button) securityBtn).setOnAction(e -> { setActiveNav((Button) securityBtn); showSecurityFeatures(center); });
+        systemBtn.setOnAction(e -> { setActiveNav(systemBtn);               showSystemConfiguration(center); });
+        maintenanceBtn.setOnAction(e -> { setActiveNav(maintenanceBtn);     showMaintenance(center); });
+
+        // Brand header sits above the nav items
         navMenu.getChildren().add(0, topBrand);
-        topBrand.setPadding(new Insets(0, 0, 16, 0));
+        topBrand.setPadding(new Insets(0, 0, 8, 0));
 
-        // Make navigation menu scrollable to show all items including logout
         var navScrollPane = new ScrollPane(menuStack);
-        navScrollPane.setStyle("-fx-background-color: transparent; -fx-background: transparent;");
+        navScrollPane.getStyleClass().add("scroll-pane-transparent");
         navScrollPane.setFitToWidth(true);
         navScrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
         navScrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
         VBox.setVgrow(navScrollPane, Priority.ALWAYS);
 
-        var sidebar = new VBox(navScrollPane);
-        sidebar.getStyleClass().add("sidebar");
-        sidebar.setPrefWidth(300);
-        sidebar.setMinWidth(300);
+        sidebarVBox = new VBox(0, toggleBtn, navScrollPane);
+        sidebarVBox.getStyleClass().add("sidebar");
+        sidebarVBox.setPrefWidth(SIDEBAR_EXPANDED);
+        sidebarVBox.setMinWidth(SIDEBAR_EXPANDED);
+        sidebarVBox.setMaxWidth(SIDEBAR_EXPANDED);
 
-        // Ensure the indicator is in the correct position after layout
         Platform.runLater(() -> {
             if (selectedNavButton != null) moveSelectionIndicator(selectedNavButton);
         });
 
-        root.setLeft(sidebar);
+        root.setLeft(sidebarVBox);
         
         // Make center content scrollable and responsive with consistent padding
         center.setPadding(new Insets(20));
@@ -676,6 +610,51 @@ public class App extends Application {
         button.getStyleClass().add("sidebar-button");
         button.setGraphicTextGap(12);
         return button;
+    }
+
+    /** Toggle sidebar between expanded (text+icon) and collapsed (icon only). */
+    private void toggleSidebar(FontIcon toggleIcon, HBox topBrand, VBox navMenu) {
+        sidebarCollapsed = !sidebarCollapsed;
+        double targetWidth = sidebarCollapsed ? SIDEBAR_COLLAPSED : SIDEBAR_EXPANDED;
+
+        // Animate width
+        Timeline timeline = new Timeline(
+            new KeyFrame(Duration.millis(200),
+                new javafx.animation.KeyValue(sidebarVBox.prefWidthProperty(), targetWidth,
+                    javafx.animation.Interpolator.EASE_BOTH),
+                new javafx.animation.KeyValue(sidebarVBox.minWidthProperty(), targetWidth,
+                    javafx.animation.Interpolator.EASE_BOTH),
+                new javafx.animation.KeyValue(sidebarVBox.maxWidthProperty(), targetWidth,
+                    javafx.animation.Interpolator.EASE_BOTH)
+            )
+        );
+        timeline.play();
+
+        // Flip chevron
+        toggleIcon.setIconCode(sidebarCollapsed ? FontAwesomeSolid.CHEVRON_RIGHT : FontAwesomeSolid.CHEVRON_LEFT);
+
+        // Hide/show logo
+        topBrand.setVisible(!sidebarCollapsed);
+        topBrand.setManaged(!sidebarCollapsed);
+
+        // Show/hide button labels — use properties map to avoid corrupting userData
+        for (javafx.scene.Node node : navMenu.getChildren()) {
+            if (!(node instanceof Button btn) || btn.getGraphic() == null) continue;
+            if (sidebarCollapsed) {
+                // Save label text as a node property, then hide it
+                btn.getProperties().put("sidebarLabel", btn.getText());
+                btn.setText("");
+                btn.getStyleClass().add("sidebar-button-collapsed");
+                String label = (String) btn.getProperties().get("sidebarLabel");
+                if (label != null && !label.isBlank()) btn.setTooltip(new Tooltip(label));
+            } else {
+                // Restore label
+                String saved = (String) btn.getProperties().get("sidebarLabel");
+                if (saved != null) btn.setText(saved);
+                btn.getStyleClass().remove("sidebar-button-collapsed");
+                btn.setTooltip(null);
+            }
+        }
     }
     private Button createSidebarButton(String text) {
         var button = new Button(text);
@@ -761,13 +740,13 @@ public class App extends Application {
         // Government header
         VBox headerSection = new VBox(4);
         Label republikaLabel = new Label("REPUBLIKA NG PILIPINAS");
-        republikaLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: 700; -fx-text-fill: #0A3D62; -fx-letter-spacing: 1px;");
+        republikaLabel.getStyleClass().add("overview-republika");
         
         Label barangayLabel = new Label("BARANGAY SAN MARINO");
-        barangayLabel.setStyle("-fx-font-size: 24px; -fx-font-weight: 700; -fx-text-fill: #0f172a;");
+        barangayLabel.getStyleClass().add("overview-barangay");
         
         Label systemLabel = new Label("Document Management System");
-        systemLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #64748b;");
+        systemLabel.getStyleClass().add("overview-system");
         
         headerSection.getChildren().addAll(republikaLabel, barangayLabel, systemLabel);
         
@@ -804,14 +783,14 @@ public class App extends Application {
         // Recent announcements (existing functionality)
         var announcementsSection = new VBox(12);
         var announcementsTitle = new Label("Recent Announcements");
-        announcementsTitle.setStyle("-fx-font-size: 18px; -fx-font-weight: 700; -fx-text-fill: #0f172a;");
+        announcementsTitle.getStyleClass().add("overview-announcements-title");
         announcementsSection.getChildren().add(announcementsTitle);
 
         ObservableList<Announcement> allAnnouncements = DatabaseHelper.getAllAnnouncements();
         allAnnouncements.stream().limit(3).forEach(announcement -> {
             var announcementItem = new HBox(12);
             announcementItem.setPadding(new Insets(12));
-            announcementItem.setStyle("-fx-background-color: #f8fafc; -fx-border-color: #e2e8f0; -fx-border-width: 1; -fx-border-radius: 8; -fx-background-radius: 8;");
+            announcementItem.getStyleClass().add("card-announcement-item");
             announcementItem.setAlignment(Pos.TOP_LEFT);
 
             var typeBadge = new Label(announcement.getType());
@@ -821,17 +800,19 @@ public class App extends Application {
                 case "Program" -> "#8b5cf6";
                 default -> "#6b7280";
             };
-            typeBadge.setStyle("-fx-background-color: " + typeColor + "; -fx-text-fill: white; -fx-padding: 4 10; -fx-background-radius: 6; -fx-font-size: 11; -fx-font-weight: bold;");
+            // Dynamic color badge — color value is runtime, static parts in CSS
+            typeBadge.getStyleClass().add("type-badge");
+            typeBadge.setStyle("-fx-background-color: " + typeColor + ";");
 
             var details = new VBox(4);
             HBox.setHgrow(details, Priority.ALWAYS);
             
             var title = new Label(announcement.getTitle());
-            title.setStyle("-fx-text-fill: #0f172a; -fx-font-size: 14; -fx-font-weight: bold;");
+            title.getStyleClass().addAll("overview-announcement-title");
             title.setWrapText(true);
 
             var meta = new Label("Posted on " + announcement.getPostedDate());
-            meta.setStyle("-fx-text-fill: #64748b; -fx-font-size: 11;");
+            meta.getStyleClass().add("overview-announcement-meta");
 
             details.getChildren().addAll(title, meta);
             announcementItem.getChildren().addAll(typeBadge, details);
@@ -840,7 +821,7 @@ public class App extends Application {
 
         if (allAnnouncements.isEmpty()) {
             var noAnnouncements = new Label("No announcements yet");
-            noAnnouncements.setStyle("-fx-text-fill: #94a3b8; -fx-font-style: italic;");
+            noAnnouncements.getStyleClass().add("overview-no-announcements");
             announcementsSection.getChildren().add(noAnnouncements);
         }
 
@@ -854,16 +835,17 @@ public class App extends Application {
         VBox card = new VBox(8);
         card.setPadding(new Insets(16));
         card.setPrefWidth(180);
-        card.setStyle("-fx-background-color: #ffffff; -fx-border-color: #e2e8f0; -fx-border-width: 1px; -fx-border-radius: 12px; -fx-background-radius: 12px; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.05), 8, 0, 0, 2);");
+        card.getStyleClass().add("card");
         
         Label iconLabel = new Label(icon);
-        iconLabel.setStyle("-fx-font-size: 20px;");
+        iconLabel.getStyleClass().add("overview-stat-icon");
         
         Label valueLabel = new Label(value);
+        // Dynamic color — only the color value is dynamic
         valueLabel.setStyle("-fx-font-size: 24px; -fx-font-weight: 700; -fx-text-fill: " + color + ";");
         
         Label titleLabel = new Label(title);
-        titleLabel.setStyle("-fx-font-size: 11px; -fx-font-weight: 600; -fx-text-fill: #64748b; -fx-letter-spacing: 0.5px;");
+        titleLabel.getStyleClass().addAll("text-muted-xs", "text-semibold");
         
         card.getChildren().addAll(iconLabel, valueLabel, titleLabel);
         return card;
@@ -950,7 +932,7 @@ public class App extends Application {
         });
 
         ToolBar toolBar = new ToolBar(addButton, editButton, deleteButton);
-        toolBar.setStyle("-fx-background-color: transparent; -fx-padding: 0;");
+        toolBar.getStyleClass().add("toolbar-transparent");
 
         var content = new VBox(12, toolBar, rolesTable);
         VBox.setVgrow(rolesTable, Priority.ALWAYS);
@@ -1213,7 +1195,7 @@ public class App extends Application {
 
         // Step 1: Select Resident with Search
         Label residentLabel = new Label("Step 1: Select Resident");
-        residentLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
+        residentLabel.getStyleClass().add("text-subheading");
 
         // Search field for residents
         TextField residentSearchField = new TextField();
@@ -1480,7 +1462,7 @@ public class App extends Application {
         });
 
         ToolBar toolBar = new ToolBar(approveBtn, paymentBtn, generateBtn, sendSMSBtn);
-        toolBar.setStyle("-fx-background-color: transparent; -fx-padding: 0;");
+        toolBar.getStyleClass().add("toolbar-transparent");
 
         container.getChildren().addAll(toolBar, documentRequestsTable);
         VBox.setVgrow(documentRequestsTable, Priority.ALWAYS);
@@ -2062,7 +2044,7 @@ public class App extends Application {
         content.setPadding(new Insets(28));
         
         Label title = new Label("Resident & Data Control");
-        title.setStyle("-fx-font-size: 20; -fx-font-weight: 700; -fx-text-fill: #1f2937;");
+        title.getStyleClass().add("text-heading-lg");
         
         content.getChildren().addAll(title, actionBox, enhancedResidentTable.getContainer());
         VBox.setVgrow(enhancedResidentTable.getContainer(), Priority.ALWAYS);
@@ -2349,7 +2331,7 @@ public class App extends Application {
         // Main Card Container (CR-80 Aspect Ratio)
         VBox card = new VBox();
         card.setPrefSize(450, 280);
-        card.setStyle("-fx-background-color: white; -fx-border-color: #cbd5e1; -fx-border-width: 1; -fx-border-radius: 15; -fx-background-radius: 15; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.2), 10, 0, 0, 5);");
+        card.getStyleClass().add("card-rounded");
 
         // Header - Government Style
         HBox header = new HBox(15);
@@ -2389,7 +2371,7 @@ public class App extends Application {
         VBox details = new VBox(8);
         details.setPrefWidth(280);
         Label nameLbl = new Label(resident.getLastName().toUpperCase() + ", " + resident.getFirstName().toUpperCase() + (resident.getMiddleName() != null && !resident.getMiddleName().isBlank() ? " " + resident.getMiddleName().toUpperCase() : ""));
-        nameLbl.setStyle("-fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: #1e293b;");
+        nameLbl.getStyleClass().add("text-heading-sm");
         
         Label idLbl = new Label("ID: " + resident.getId());
         idLbl.setStyle("-fx-font-size: 11; -fx-font-weight: bold;");
@@ -2715,105 +2697,217 @@ public class App extends Application {
     }
 
     private VBox createManageUsersPanel() {
-        VBox panel = new VBox(25);
-        panel.setPadding(new Insets(25));
+        VBox panel = new VBox(12);
+        panel.setPadding(new Insets(20));
 
         // Header
         Label title = new Label("User Management");
-        title.setStyle("-fx-font-size: 18; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
+        title.getStyleClass().add("text-heading");
 
-        // Action buttons with better spacing
-        HBox actionBox = new HBox(12);
-        actionBox.setAlignment(Pos.CENTER_LEFT);
-        actionBox.setPadding(new Insets(0, 0, 10, 0));
+        Label subtitle = new Label("All residents are listed below. Assign or change roles to grant system access.");
+        subtitle.getStyleClass().add("text-muted");
 
-        Button addUserBtn = new Button("Add User", new FontIcon(FontAwesomeSolid.USER_PLUS));
-        addUserBtn.getStyleClass().addAll("button-primary", "button-small");
-        addUserBtn.setOnAction(e -> showAddUserDialog());
-        addUserBtn.setPrefWidth(110);
+        VBox header = new VBox(4, title, subtitle);
 
-        Button promoteResidentBtn = new Button("Promote", new FontIcon(FontAwesomeSolid.USER_SHIELD));
-        promoteResidentBtn.getStyleClass().addAll("button-secondary", "button-small");
-        promoteResidentBtn.setTooltip(new Tooltip("Create user account from existing resident"));
-        promoteResidentBtn.setOnAction(e -> showPromoteResidentDialog());
-        promoteResidentBtn.setPrefWidth(100);
+        // Build the unified table
+        TableView<ResidentUserRow> table = createResidentUserTable();
+        ObservableList<ResidentUserRow> data = DatabaseHelper.getAllResidentsWithAccountInfo();
 
-        Button viewResidentsBtn = new Button("View All", new FontIcon(FontAwesomeSolid.USERS));
-        viewResidentsBtn.getStyleClass().addAll("button-info", "button-small");
-        viewResidentsBtn.setTooltip(new Tooltip("View all residents and their account status"));
-        viewResidentsBtn.setOnAction(e -> showResidentsAccountStatusDialog());
-        viewResidentsBtn.setPrefWidth(95);
+        TableUtils.EnhancedTable<ResidentUserRow> enhancedTable = TableUtils.createEnhancedTable(table, data);
+        enhancedTable.setGlobalFilter(row ->
+            row.getFullName() + " " + row.getPhoneNumber() + " " + row.getAddress() +
+            " " + row.getRole() + " " + row.getUsername() +
+            " " + (row.hasAccount() ? "has account active" : "no account")
+        );
 
-        actionBox.getChildren().addAll(addUserBtn, promoteResidentBtn, viewResidentsBtn);
-
-        // Create enhanced table with better proportions
-        TableView<User> usersTable = createUsersTable();
-        ObservableList<User> userData = DatabaseHelper.getAllUsers();
-        
-        TableUtils.EnhancedTable<User> enhancedTable = TableUtils.createEnhancedTable(usersTable, userData);
-        
-        // Set global search function
-        enhancedTable.setGlobalFilter(user -> {
-            StringBuilder searchText = new StringBuilder();
-            searchText.append(user.getUsername()).append(" ");
-            searchText.append(user.getRole()).append(" ");
-            
-            // Add resident name if linked
-            if (user.getResidentId() > 0) {
-                Resident resident = DatabaseHelper.getResidentForUser(user.getId());
-                if (resident != null) {
-                    searchText.append(resident.getFirstName()).append(" ");
-                    searchText.append(resident.getLastName()).append(" ");
-                    if (resident.getPhoneNumber() != null) {
-                        searchText.append(resident.getPhoneNumber()).append(" ");
-                    }
-                    if (resident.getAddress() != null) {
-                        searchText.append(resident.getAddress()).append(" ");
-                    }
-                }
-            }
-            
-            searchText.append(user.getCreatedDate()).append(" ");
-            searchText.append(user.getLastLogin()).append(" ");
-            searchText.append(user.isActive() ? "active" : "inactive");
-            
-            return searchText.toString();
-        });
-
-        // Store reference for refreshing
-        this.usersManagementTable = usersTable;
+        this.usersManagementTable = table;
         this.enhancedUsersTable = enhancedTable;
 
-        // Setup column filters after table is created
-        Platform.runLater(() -> setupUsersTableFilters());
-
-        panel.getChildren().addAll(title, actionBox, enhancedTable.getContainer());
+        panel.getChildren().addAll(header, enhancedTable.getContainer());
         VBox.setVgrow(enhancedTable.getContainer(), Priority.ALWAYS);
-
         return panel;
     }
 
+    private TableView<ResidentUserRow> createResidentUserTable() {
+        TableView<ResidentUserRow> table = new TableView<>();
+        table.getStyleClass().add("table-view");
+        table.setPrefHeight(500);
+        table.setColumnResizePolicy(TableView.UNCONSTRAINED_RESIZE_POLICY);
+        table.setRowFactory(tv -> {
+            TableRow<ResidentUserRow> row = new TableRow<>();
+            row.setPrefHeight(38);
+            return row;
+        });
+
+        // --- Name ---
+        TableColumn<ResidentUserRow, String> nameCol = new TableColumn<>("Full Name");
+        nameCol.setCellValueFactory(new PropertyValueFactory<>("fullName"));
+        nameCol.setPrefWidth(180);
+        nameCol.setMinWidth(150);
+
+        // --- Phone ---
+        TableColumn<ResidentUserRow, String> phoneCol = new TableColumn<>("Phone");
+        phoneCol.setCellValueFactory(new PropertyValueFactory<>("phoneNumber"));
+        phoneCol.setPrefWidth(120);
+        phoneCol.setMinWidth(100);
+
+        // --- Address ---
+        TableColumn<ResidentUserRow, String> addressCol = new TableColumn<>("Address");
+        addressCol.setCellValueFactory(new PropertyValueFactory<>("address"));
+        addressCol.setPrefWidth(200);
+        addressCol.setMinWidth(150);
+
+        // --- Account Status badge ---
+        TableColumn<ResidentUserRow, Boolean> statusCol = new TableColumn<>("Account");
+        statusCol.setCellValueFactory(new PropertyValueFactory<>("hasAccount"));
+        statusCol.setPrefWidth(100);
+        statusCol.setMinWidth(90);
+        statusCol.setCellFactory(col -> new TableCell<ResidentUserRow, Boolean>() {
+            @Override
+            protected void updateItem(Boolean has, boolean empty) {
+                super.updateItem(has, empty);
+                if (empty || has == null) { setGraphic(null); return; }
+                Label badge = new Label(has ? "Has Account" : "No Account");
+                badge.setStyle(has
+                    ? "-fx-background-color:#d1fae5;-fx-text-fill:#065f46;-fx-padding:3 8;-fx-background-radius:10;-fx-font-size:11px;-fx-font-weight:700;"
+                    : "-fx-background-color:#f3f4f6;-fx-text-fill:#6b7280;-fx-padding:3 8;-fx-background-radius:10;-fx-font-size:11px;-fx-font-weight:700;");
+                setGraphic(badge);
+                setText(null);
+            }
+        });
+
+        // --- Username ---
+        TableColumn<ResidentUserRow, String> usernameCol = new TableColumn<>("Username");
+        usernameCol.setCellValueFactory(new PropertyValueFactory<>("username"));
+        usernameCol.setPrefWidth(130);
+        usernameCol.setMinWidth(100);
+        usernameCol.setCellFactory(col -> new TableCell<ResidentUserRow, String>() {
+            @Override
+            protected void updateItem(String val, boolean empty) {
+                super.updateItem(val, empty);
+                if (empty) { setText(null); return; }
+                setText(val != null && !val.isEmpty() ? val : "—");
+                setStyle(val == null || val.isEmpty() ? "-fx-text-fill:#9ca3af;" : "");
+            }
+        });
+
+        // --- Role (inline ComboBox) ---
+        TableColumn<ResidentUserRow, String> roleCol = new TableColumn<>("Role");
+        roleCol.setCellValueFactory(new PropertyValueFactory<>("role"));
+        roleCol.setPrefWidth(200);
+        roleCol.setMinWidth(170);
+        roleCol.setCellFactory(col -> new TableCell<ResidentUserRow, String>() {
+            private final ComboBox<String> combo = new ComboBox<>();
+            {
+                combo.setPromptText("Assign role...");
+                combo.setPrefWidth(185);
+                combo.setStyle("-fx-font-size:12px;");
+                // Populate roles
+                combo.getItems().add("— No Role —");
+                for (Role r : DatabaseHelper.getAllRoles()) combo.getItems().add(r.getName());
+
+                combo.setOnAction(e -> {
+                    ResidentUserRow row = getTableView().getItems().get(getIndex());
+                    String selected = combo.getValue();
+                    if (selected == null) return;
+                    if ("— No Role —".equals(selected)) {
+                        // Remove account
+                        if (row.hasAccount()) {
+                            Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+                                "Remove system access for " + row.getFullName() + "?",
+                                ButtonType.YES, ButtonType.NO);
+                            confirm.setTitle("Remove Role");
+                            confirm.showAndWait().ifPresent(btn -> {
+                                if (btn == ButtonType.YES) {
+                                    DatabaseHelper.removeRoleFromResident(row.getResidentId());
+                                    row.setUserId(0);
+                                    row.setRole("");
+                                    row.setUsername("");
+                                    getTableView().refresh();
+                                    showToast("Access removed for " + row.getFullName());
+                                }
+                            });
+                        }
+                    } else {
+                        // Assign / change role
+                        String username = DatabaseHelper.assignRoleToResident(row.getResidentId(), selected);
+                        if (username != null) {
+                            User updated = DatabaseHelper.getUserByUsername(username);
+                            if (updated != null) {
+                                row.setUserId(updated.getId());
+                                row.setUsername(updated.getUsername());
+                            }
+                            row.setRole(selected);
+                            getTableView().refresh();
+                            String msg = row.hasAccount()
+                                ? "Role updated to " + selected + " for " + row.getFullName()
+                                : "Account created for " + row.getFullName() + " (user: " + username + ", temp password: bdms@" + row.getResidentId() + ")";
+                            showToast(msg);
+                        } else {
+                            showToast("Failed to assign role.");
+                        }
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(String role, boolean empty) {
+                super.updateItem(role, empty);
+                if (empty) { setGraphic(null); return; }
+                ResidentUserRow row = getTableView().getItems().get(getIndex());
+                String current = row.getRole();
+                if (current != null && !current.isEmpty()) {
+                    combo.setValue(current);
+                } else {
+                    combo.setValue(null);
+                }
+                setGraphic(combo);
+                setText(null);
+            }
+        });
+
+        // --- Last Login ---
+        TableColumn<ResidentUserRow, String> loginCol = new TableColumn<>("Last Login");
+        loginCol.setCellValueFactory(new PropertyValueFactory<>("lastLogin"));
+        loginCol.setPrefWidth(140);
+        loginCol.setMinWidth(120);
+        loginCol.setCellFactory(col -> new TableCell<ResidentUserRow, String>() {
+            @Override
+            protected void updateItem(String val, boolean empty) {
+                super.updateItem(val, empty);
+                if (empty) { setText(null); return; }
+                setText(val != null && !val.isEmpty() && !"Never".equals(val) ? val : "—");
+                setStyle("Never".equals(val) || val == null || val.isEmpty() ? "-fx-text-fill:#9ca3af;" : "");
+            }
+        });
+
+        table.getColumns().addAll(nameCol, phoneCol, addressCol, statusCol, usernameCol, roleCol, loginCol);
+        return table;
+    }
+
     private TableView<User> createUsersTable() {
+
+
         TableView<User> usersTable = new TableView<>();
         usersTable.getStyleClass().add("table-view");
         usersTable.setPrefHeight(500);
-        usersTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        // UNCONSTRAINED so each column respects its set width — no word-wrapping
+        usersTable.setColumnResizePolicy(TableView.UNCONSTRAINED_RESIZE_POLICY);
 
-        // Table columns with better proportions
         TableColumn<User, Number> idCol = new TableColumn<>("ID");
         idCol.setCellValueFactory(new PropertyValueFactory<>("id"));
-        idCol.setPrefWidth(50);
-        idCol.setMinWidth(50);
+        idCol.setPrefWidth(55);
+        idCol.setMinWidth(55);
         idCol.setMaxWidth(70);
 
         TableColumn<User, String> usernameCol = new TableColumn<>("Username");
         usernameCol.setCellValueFactory(new PropertyValueFactory<>("username"));
-        usernameCol.setPrefWidth(120);
-        usernameCol.setMinWidth(100);
+        usernameCol.setPrefWidth(130);
+        usernameCol.setMinWidth(110);
 
         TableColumn<User, String> residentNameCol = new TableColumn<>("Resident Name");
         residentNameCol.setPrefWidth(160);
-        residentNameCol.setMinWidth(140);
+        residentNameCol.setMinWidth(150);
         residentNameCol.setCellValueFactory(cellData -> {
             User user = cellData.getValue();
             if (user.getResidentId() > 0) {
@@ -2828,8 +2922,8 @@ public class App extends Application {
         });
 
         TableColumn<User, String> residentInfoCol = new TableColumn<>("Contact Info");
-        residentInfoCol.setPrefWidth(200);
-        residentInfoCol.setMinWidth(180);
+        residentInfoCol.setPrefWidth(160);
+        residentInfoCol.setMinWidth(140);
         residentInfoCol.setCellValueFactory(cellData -> {
             User user = cellData.getValue();
             if (user.getResidentId() > 0) {
@@ -2875,23 +2969,23 @@ public class App extends Application {
 
         TableColumn<User, String> roleCol = new TableColumn<>("Role");
         roleCol.setCellValueFactory(new PropertyValueFactory<>("role"));
-        roleCol.setPrefWidth(140);
-        roleCol.setMinWidth(120);
+        roleCol.setPrefWidth(120);
+        roleCol.setMinWidth(100);
 
         TableColumn<User, String> createdCol = new TableColumn<>("Created");
         createdCol.setCellValueFactory(new PropertyValueFactory<>("createdDate"));
-        createdCol.setPrefWidth(110);
-        createdCol.setMinWidth(100);
+        createdCol.setPrefWidth(145);
+        createdCol.setMinWidth(130);
 
         TableColumn<User, String> lastLoginCol = new TableColumn<>("Last Login");
         lastLoginCol.setCellValueFactory(new PropertyValueFactory<>("lastLogin"));
-        lastLoginCol.setPrefWidth(110);
-        lastLoginCol.setMinWidth(100);
+        lastLoginCol.setPrefWidth(145);
+        lastLoginCol.setMinWidth(130);
 
         TableColumn<User, Boolean> statusCol = new TableColumn<>("Status");
         statusCol.setCellValueFactory(new PropertyValueFactory<>("isActive"));
-        statusCol.setPrefWidth(80);
-        statusCol.setMinWidth(70);
+        statusCol.setPrefWidth(85);
+        statusCol.setMinWidth(75);
         statusCol.setCellFactory(col -> new TableCell<User, Boolean>() {
             @Override
             protected void updateItem(Boolean isActive, boolean empty) {
@@ -2908,8 +3002,8 @@ public class App extends Application {
         });
 
         TableColumn<User, Void> actionsCol = new TableColumn<>("Actions");
-        actionsCol.setPrefWidth(130);
-        actionsCol.setMinWidth(120);
+        actionsCol.setPrefWidth(120);
+        actionsCol.setMinWidth(110);
         actionsCol.setSortable(false); // Actions column shouldn't be sortable
         actionsCol.setCellFactory(col -> new TableCell<User, Void>() {
             private final Button editBtn = new Button("", new FontIcon(FontAwesomeSolid.EDIT));
@@ -2964,10 +3058,10 @@ public class App extends Application {
 
         usersTable.getColumns().addAll(idCol, usernameCol, residentNameCol, residentInfoCol, roleCol, createdCol, lastLoginCol, statusCol, actionsCol);
 
-        // Set row height to accommodate wrapped text
+        // Standard row height — no text wrapping needed
         usersTable.setRowFactory(tv -> {
             TableRow<User> row = new TableRow<>();
-            row.setPrefHeight(50);
+            row.setPrefHeight(38);
             return row;
         });
 
@@ -2975,58 +3069,12 @@ public class App extends Application {
     }
 
     private void setupUsersTableFilters() {
-        if (enhancedUsersTable != null) {
-            TableView<User> table = enhancedUsersTable.getTableView();
-            
-            // Add column filters
-            for (TableColumn<User, ?> column : table.getColumns()) {
-                if (column.getText().equals("Actions")) continue; // Skip actions column
-                
-                switch (column.getText()) {
-                    case "ID":
-                        enhancedUsersTable.addColumnFilter(column, user -> String.valueOf(user.getId()));
-                        break;
-                    case "Username":
-                        enhancedUsersTable.addColumnFilter(column, User::getUsername);
-                        break;
-                    case "Resident Name":
-                        enhancedUsersTable.addColumnFilter(column, user -> {
-                            if (user.getResidentId() > 0) {
-                                Resident resident = DatabaseHelper.getResidentForUser(user.getId());
-                                if (resident != null) {
-                                    return resident.getFirstName() + " " + resident.getLastName();
-                                }
-                            }
-                            return "No resident linked";
-                        });
-                        break;
-                    case "Role":
-                        enhancedUsersTable.addColumnFilter(column, User::getRole);
-                        break;
-                    case "Created":
-                        enhancedUsersTable.addColumnFilter(column, User::getCreatedDate);
-                        break;
-                    case "Last Login":
-                        enhancedUsersTable.addColumnFilter(column, User::getLastLogin);
-                        break;
-                    case "Status":
-                        enhancedUsersTable.addColumnFilter(column, user -> user.isActive() ? "Active" : "Inactive");
-                        break;
-                }
-            }
-        }
-    }
-
-    private void refreshUsersTable(TableView<User> table) {
-        if (table != null) {
-            table.setItems(DatabaseHelper.getAllUsers());
-        }
+        // No-op: filtering is handled by the global search in EnhancedTable
     }
 
     private void refreshUsersManagementTable() {
         if (enhancedUsersTable != null) {
-            enhancedUsersTable.refreshData(DatabaseHelper.getAllUsers());
-            setupUsersTableFilters(); // Re-setup filters after refresh
+            enhancedUsersTable.refreshData(DatabaseHelper.getAllResidentsWithAccountInfo());
         }
     }
 
@@ -3234,7 +3282,7 @@ public class App extends Application {
 
         // Search for residents without accounts
         Label searchLabel = new Label("Search Residents:");
-        searchLabel.setStyle("-fx-font-weight: bold;");
+        searchLabel.getStyleClass().add("text-bold");
 
         TextField residentSearchField = new TextField();
         residentSearchField.setPromptText("Search by name...");
@@ -3288,7 +3336,7 @@ public class App extends Application {
 
         // Account creation form
         Label formLabel = new Label("Account Details:");
-        formLabel.setStyle("-fx-font-weight: bold;");
+        formLabel.getStyleClass().add("text-bold");
 
         GridPane formGrid = new GridPane();
         formGrid.setHgap(10);
@@ -3572,7 +3620,7 @@ public class App extends Application {
 
         ScrollPane scrollPane = new ScrollPane(content);
         scrollPane.setFitToWidth(true);
-        scrollPane.setStyle("-fx-background-color: transparent;");
+        scrollPane.getStyleClass().add("scroll-pane-transparent");
 
         dialog.getDialogPane().setContent(scrollPane);
         dialog.showAndWait();
@@ -3716,7 +3764,7 @@ public class App extends Application {
         });
 
         ToolBar toolBar = new ToolBar(addButton, editButton, deleteButton);
-        toolBar.setStyle("-fx-background-color: transparent; -fx-padding: 0;");
+        toolBar.getStyleClass().add("toolbar-transparent");
 
         VBox content;
         if (!canManage) {
@@ -3862,7 +3910,7 @@ public class App extends Application {
         });
         
         Label noteLabel = new Label("ℹ️ Click on any permission cell to change it. Changes take effect after restart.");
-        noteLabel.setStyle("-fx-font-size: 11; -fx-text-fill: #666; -fx-padding: 5 0;");
+        noteLabel.getStyleClass().add("text-muted-sm");
         
         VBox contentWithButton = new VBox(12, infoLabel, legendBox, permissionsTable, noteLabel, savePermissionsBtn);
         VBox.setVgrow(permissionsTable, Priority.ALWAYS);
@@ -4062,7 +4110,7 @@ public class App extends Application {
         panel.setMaxWidth(Double.MAX_VALUE);
 
         Label titleLabel = new Label("Submit a Complaint or Incident Report");
-        titleLabel.setStyle("-fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: #1e293b;");
+        titleLabel.getStyleClass().add("text-heading-sm");
 
         // Complaint Title
         Label complaintTitleLabel = new Label("Complaint Title");
@@ -4247,7 +4295,7 @@ public class App extends Application {
         });
 
         ToolBar toolBar = new ToolBar(viewBtn, statusBtn, notesBtn, smsBtn, new Separator(), reportBtn);
-        toolBar.setStyle("-fx-background-color: transparent; -fx-padding: 0;");
+        toolBar.getStyleClass().add("toolbar-transparent");
 
         container.getChildren().addAll(toolBar, complaintsTable);
         VBox.setVgrow(complaintsTable, Priority.ALWAYS);
@@ -4266,15 +4314,15 @@ public class App extends Application {
 
         Label residentLabel = new Label("Resident:");
         Label residentValue = new Label(complaint.getResidentName());
-        residentValue.setStyle("-fx-font-weight: bold;");
+        residentValue.getStyleClass().add("text-bold");
 
         Label titleLabel = new Label("Title:");
         Label titleValue = new Label(complaint.getTitle());
-        titleValue.setStyle("-fx-font-weight: bold;");
+        titleValue.getStyleClass().add("text-bold");
 
         Label statusLabel = new Label("Status:");
         Label statusValue = new Label(complaint.getStatus());
-        statusValue.setStyle("-fx-font-weight: bold;");
+        statusValue.getStyleClass().add("text-bold");
 
         Label descriptionLabel = new Label("Description:");
         TextArea descriptionArea = new TextArea(complaint.getDescription());
@@ -5109,7 +5157,7 @@ public class App extends Application {
         // Export Folder Configuration Section
         var exportConfigBox = new VBox(10);
         exportConfigBox.setPadding(new Insets(15));
-        exportConfigBox.setStyle("-fx-background-color: #f0f9ff; -fx-border-color: #3b82f6; -fx-border-width: 1; -fx-border-radius: 5; -fx-background-radius: 5;");
+        exportConfigBox.getStyleClass().add("card-export-config");
 
         var configTitle = new Label("Export Configuration");
         configTitle.setStyle("-fx-font-size: 13; -fx-font-weight: bold; -fx-text-fill: #1e40af;");
@@ -5302,7 +5350,7 @@ public class App extends Application {
     private VBox createSummaryCard(String title, String value, String color, org.kordamp.ikonli.Ikon icon) {
         var card = new VBox(8);
         card.setPadding(new Insets(15));
-        card.setStyle("-fx-background-color: white; -fx-border-color: #e5e7eb; -fx-border-width: 1; -fx-border-radius: 8; -fx-background-radius: 8;");
+        card.getStyleClass().add("card-sm");
         card.setPrefWidth(200);
 
         var iconLabel = new Label("", new FontIcon(icon));
@@ -5644,7 +5692,7 @@ public class App extends Application {
         permissionsBox.setPrefHeight(150);
 
         var permLabel = new Label("Permissions for selected role:");
-        permLabel.setStyle("-fx-font-weight: bold;");
+        permLabel.getStyleClass().add("text-bold");
 
         var flowPane = new FlowPane(8, 8);
         flowPane.setPrefHeight(100);
@@ -5678,54 +5726,54 @@ public class App extends Application {
         panel.setPadding(new Insets(20));
 
         var titleLabel = new Label("Data Encryption & Password Security");
-        titleLabel.setStyle("-fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
+        titleLabel.getStyleClass().add("text-heading-sm");
 
         // Password Hashing Status Card (BCrypt)
         var passwordCard = new VBox(10);
-        passwordCard.setStyle("-fx-border-color: #10b981; -fx-border-width: 2; -fx-border-radius: 8; -fx-padding: 15; -fx-background-color: #f0fdf4; -fx-background-radius: 8;");
+        passwordCard.getStyleClass().add("card-security-green");
 
         var passwordLabel = new Label("BCrypt Password Hashing");
-        passwordLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
+        passwordLabel.getStyleClass().add("text-subheading");
 
         var passwordStatus = new Label("● ENABLED (12 rounds)");
         passwordStatus.setStyle("-fx-font-size: 12; -fx-text-fill: #10b981; -fx-font-weight: bold;");
 
         var passwordDesc = new Label("All user passwords are securely hashed using BCrypt with 12 rounds of salting.");
-        passwordDesc.setStyle("-fx-font-size: 11; -fx-text-fill: #666; -fx-wrap-text: true;");
+        passwordDesc.getStyleClass().addAll("text-muted-sm");
         passwordDesc.setWrapText(true);
 
         passwordCard.getChildren().addAll(passwordLabel, passwordStatus, passwordDesc);
 
         // AES-256 Encryption Status Card
         var aesCard = new VBox(10);
-        aesCard.setStyle("-fx-border-color: #3b82f6; -fx-border-width: 2; -fx-border-radius: 8; -fx-padding: 15; -fx-background-color: #eff6ff; -fx-background-radius: 8;");
+        aesCard.getStyleClass().add("card-security-blue");
 
         var aesLabel = new Label("AES-256 Data Encryption");
-        aesLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
+        aesLabel.getStyleClass().add("text-subheading");
 
         var aesStatus = new Label("● READY");
         aesStatus.setStyle("-fx-font-size: 12; -fx-text-fill: #3b82f6; -fx-font-weight: bold;");
 
         var aesDesc = new Label("Advanced Encryption Standard with 256-bit keys for sensitive data protection.");
-        aesDesc.setStyle("-fx-font-size: 11; -fx-text-fill: #666; -fx-wrap-text: true;");
+        aesDesc.getStyleClass().addAll("text-muted-sm");
         aesDesc.setWrapText(true);
 
         aesCard.getChildren().addAll(aesLabel, aesStatus, aesDesc);
 
         // Encryption options
         var optionsBox = new VBox(10);
-        optionsBox.setStyle("-fx-border-color: #e5e7eb; -fx-border-width: 1; -fx-border-radius: 8; -fx-padding: 15; -fx-background-color: #f9fafb; -fx-background-radius: 8;");
+        optionsBox.getStyleClass().add("card-options");
 
         var optionsTitle = new Label("Data Encryption Options");
         optionsTitle.setStyle("-fx-font-weight: bold; -fx-font-size: 13; -fx-text-fill: #1a1a1a;");
 
         var cb1 = new CheckBox("Encrypt Resident Personal Data");
         cb1.setSelected(false);
-        cb1.setStyle("-fx-font-size: 12; -fx-text-fill: #333;");
+        cb1.getStyleClass().add("text-body-sm");
 
         var cb2 = new CheckBox("Encrypt Financial Records");
         cb2.setSelected(false);
-        cb2.setStyle("-fx-font-size: 12; -fx-text-fill: #333;");
+        cb2.getStyleClass().add("text-body-sm");
 
         var cb3 = new CheckBox("Encrypt User Passwords (BCrypt - Always Active)");
         cb3.setSelected(true);
@@ -5734,7 +5782,7 @@ public class App extends Application {
 
         var cb4 = new CheckBox("Encrypt Audit Logs");
         cb4.setSelected(false);
-        cb4.setStyle("-fx-font-size: 12; -fx-text-fill: #333;");
+        cb4.getStyleClass().add("text-body-sm");
 
         optionsBox.getChildren().addAll(
             optionsTitle, cb1, cb2, cb3, cb4
@@ -5742,13 +5790,13 @@ public class App extends Application {
 
         // Key management
         var keyBox = new VBox(10);
-        keyBox.setStyle("-fx-border-color: #e5e7eb; -fx-border-width: 1; -fx-border-radius: 8; -fx-padding: 15; -fx-background-color: #f9fafb; -fx-background-radius: 8;");
+        keyBox.getStyleClass().add("card-options");
 
         var keyLabel = new Label("Encryption Key Management");
         keyLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 13; -fx-text-fill: #1a1a1a;");
 
         var keyStatusLabel = new Label("Last Key Rotation: " + LocalDate.now().minusDays(30).format(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
-        keyStatusLabel.setStyle("-fx-font-size: 11; -fx-text-fill: #666;");
+        keyStatusLabel.getStyleClass().add("text-muted-sm");
 
         var rotateBtn = new Button("Rotate Keys", new FontIcon(FontAwesomeSolid.SYNC));
         rotateBtn.getStyleClass().addAll("button-secondary", "button-small");
@@ -6079,12 +6127,12 @@ public class App extends Application {
         panel.setPadding(new Insets(20));
 
         Label titleLabel = new Label("SMS Service Configuration");
-        titleLabel.setStyle("-fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
+        titleLabel.getStyleClass().add("text-heading-sm");
 
         // Info box
         VBox infoBox = new VBox(8);
         infoBox.setPadding(new Insets(15));
-        infoBox.setStyle("-fx-background-color: #f0f9ff; -fx-border-color: #0284c7; -fx-border-width: 1; -fx-border-radius: 4;");
+        infoBox.getStyleClass().add("card-info");
 
         Label infoTitle = new Label("UniSMS API - Philippine SMS Service");
         infoTitle.setStyle("-fx-font-size: 12; -fx-font-weight: bold; -fx-text-fill: #0284c7;");
@@ -6224,10 +6272,10 @@ public class App extends Application {
         panel.setPadding(new Insets(20));
 
         Label titleLabel = new Label("SMS Message Templates");
-        titleLabel.setStyle("-fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
+        titleLabel.getStyleClass().add("text-heading-sm");
 
         Label descLabel = new Label("Edit SMS templates for document notifications. Use {document_type} and {request_id} as placeholders.");
-        descLabel.setStyle("-fx-font-size: 12; -fx-text-fill: #64748b;");
+        descLabel.getStyleClass().add("text-muted");
         descLabel.setWrapText(true);
 
         // Get current templates from database
@@ -6267,7 +6315,7 @@ public class App extends Application {
         
         ScrollPane scrollPane = new ScrollPane(templatesBox);
         scrollPane.setFitToWidth(true);
-        scrollPane.setStyle("-fx-background-color: transparent;");
+        scrollPane.getStyleClass().add("scroll-pane-transparent");
         VBox.setVgrow(scrollPane, Priority.ALWAYS);
         
         panel.getChildren().addAll(
@@ -6346,7 +6394,7 @@ public class App extends Application {
         panel.setPadding(new Insets(20));
 
         Label titleLabel = new Label("Send Test SMS");
-        titleLabel.setStyle("-fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
+        titleLabel.getStyleClass().add("text-heading-sm");
 
         // Status check
         boolean smsEnabled = DatabaseHelper.isSMSEnabled();
@@ -6357,12 +6405,12 @@ public class App extends Application {
         statusBox.setPadding(new Insets(15));
         
         if (smsEnabled && hasApiKey) {
-            statusBox.setStyle("-fx-background-color: #f0fdf4; -fx-border-color: #059669; -fx-border-width: 1; -fx-border-radius: 4;");
+            statusBox.getStyleClass().add("card-success");
             Label statusLabel = new Label("✓ SMS service is ready");
             statusLabel.setStyle("-fx-font-size: 12; -fx-text-fill: #059669; -fx-font-weight: bold;");
             statusBox.getChildren().add(statusLabel);
         } else {
-            statusBox.setStyle("-fx-background-color: #fef3c7; -fx-border-color: #f59e0b; -fx-border-width: 1; -fx-border-radius: 4;");
+            statusBox.getStyleClass().add("card-warning");
             Label statusLabel = new Label("⚠ SMS service is not configured. Please configure in the Configuration tab first.");
             statusLabel.setStyle("-fx-font-size: 12; -fx-text-fill: #f59e0b; -fx-font-weight: bold; -fx-wrap-text: true;");
             statusLabel.setMaxWidth(600);
@@ -6394,7 +6442,7 @@ public class App extends Application {
 
         // Character counter
         Label charCountLabel = new Label("Characters: 0 / 160 (1 credit)");
-        charCountLabel.setStyle("-fx-font-size: 11; -fx-text-fill: #666;");
+        charCountLabel.getStyleClass().add("text-muted-sm");
 
         messageArea.textProperty().addListener((obs, oldVal, newVal) -> {
             int length = newVal.length();
@@ -6495,7 +6543,7 @@ public class App extends Application {
         panel.setPadding(new Insets(20));
 
         Label titleLabel = new Label("SMS Transaction Logs");
-        titleLabel.setStyle("-fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
+        titleLabel.getStyleClass().add("text-heading-sm");
 
         // Create table for SMS logs
         TableView<SMSLogEntry> smsLogsTable = new TableView<>();
@@ -6735,7 +6783,7 @@ public class App extends Application {
 
         ScrollPane scrollPane = new ScrollPane(panel);
         scrollPane.setFitToWidth(true);
-        scrollPane.setStyle("-fx-background-color: transparent;");
+        scrollPane.getStyleClass().add("scroll-pane-transparent");
         
         VBox container = new VBox(scrollPane);
         VBox.setVgrow(scrollPane, Priority.ALWAYS);
@@ -6803,7 +6851,7 @@ public class App extends Application {
 
         ScrollPane scrollPane = new ScrollPane(panel);
         scrollPane.setFitToWidth(true);
-        scrollPane.setStyle("-fx-background-color: transparent;");
+        scrollPane.getStyleClass().add("scroll-pane-transparent");
         
         VBox container = new VBox(scrollPane);
         VBox.setVgrow(scrollPane, Priority.ALWAYS);

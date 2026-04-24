@@ -4,16 +4,20 @@ target/
 
 # IDE
 .idea/
-.vscode/
 *.iml
 
 # OS
 .DS_Store
 Thumbs.db
 
+# JVM crash logs
+hs_err_pid*.log
+replay_pid*.log
+
 # Generated files
 generatedID/
 generated_ids/
 
-# Exported financial reports
+# Exported reports
 FinancialReports/
+ExportedReports/

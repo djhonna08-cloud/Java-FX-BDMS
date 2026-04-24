@@ -732,6 +732,119 @@ public class DatabaseHelper {
     }
 
     /**
+     * Get ALL residents joined with their user account info (if any).
+     * Residents without accounts have userId=0, username="", role="".
+     * Used by the unified User Management table.
+     */
+    public static ObservableList<ResidentUserRow> getAllResidentsWithAccountInfo() {
+        ObservableList<ResidentUserRow> rows = FXCollections.observableArrayList();
+        String sql =
+            "SELECT r.id AS rid, r.first_name, r.middle_name, r.last_name, " +
+            "       r.phone_number, r.address, r.gender, " +
+            "       u.id AS uid, u.username, u.role AS urole, u.is_active, u.last_login " +
+            "FROM residents r " +
+            "LEFT JOIN users u ON r.id = u.resident_id " +
+            "ORDER BY r.last_name, r.first_name";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                String fn = rs.getString("first_name");
+                String mn = rs.getString("middle_name");
+                String ln = rs.getString("last_name");
+                String fullName = (fn != null ? fn : "") +
+                    (mn != null && !mn.trim().isEmpty() ? " " + mn : "") +
+                    (ln != null ? " " + ln : "");
+                int uid = rs.getInt("uid"); // 0 if NULL (LEFT JOIN)
+                rows.add(new ResidentUserRow(
+                    rs.getInt("rid"),
+                    fullName.trim(),
+                    rs.getString("phone_number"),
+                    rs.getString("address"),
+                    rs.getString("gender"),
+                    uid,
+                    rs.getString("username"),
+                    rs.getString("urole"),
+                    uid > 0 && rs.getBoolean("is_active"),
+                    rs.getString("last_login")
+                ));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return rows;
+    }
+
+    /**
+     * Assign or update a role for a resident.
+     * If the resident has no account, creates one with a generated username and a temporary password.
+     * If they already have an account, updates the role.
+     * Returns the username used (new or existing).
+     */
+    public static String assignRoleToResident(int residentId, String role) {
+        try {
+            // Check if resident already has an account
+            User existing = getUserByResidentId(residentId);
+            if (existing != null) {
+                // Just update the role
+                updateUser(existing.getId(), existing.getUsername(), role, existing.isActive());
+                return existing.getUsername();
+            }
+            // No account — create one
+            Optional<Resident> resOpt = getResidentById(residentId);
+            if (!resOpt.isPresent()) return null;
+            Resident res = resOpt.get();
+            // Generate username: firstname.lastname (lowercase, alphanumeric only)
+            String base = (res.getFirstName() + "." + res.getLastName())
+                .toLowerCase().replaceAll("[^a-z0-9.]", "");
+            String username = base;
+            // Ensure uniqueness
+            int suffix = 1;
+            while (getUserByUsername(username) != null) {
+                username = base + suffix++;
+            }
+            String tempPassword = "bdms@" + residentId; // temporary password
+            createUserFromResident(residentId, username, tempPassword, role);
+            return username;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    /**
+     * Remove the role/account from a resident (deletes their user account).
+     */
+    public static boolean removeRoleFromResident(int residentId) {
+        User user = getUserByResidentId(residentId);
+        if (user == null) return false;
+        return deleteUser(user.getId());
+    }
+
+    /**
+     * Get a user by username (for uniqueness checks).
+     */
+    public static User getUserByUsername(String username) {
+        String sql = "SELECT id, username, role, created_date, last_login, is_active, resident_id " +
+                     "FROM users WHERE LOWER(username) = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, username.toLowerCase());
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                return new User(
+                    rs.getInt("id"), rs.getString("username"), rs.getString("role"),
+                    rs.getString("created_date"), rs.getString("last_login"),
+                    rs.getBoolean("is_active"), rs.getInt("resident_id")
+                );
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    /**
      * Get residents who don't have user accounts yet
      * @return ObservableList of residents without user accounts
      */

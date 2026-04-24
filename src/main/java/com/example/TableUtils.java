@@ -40,13 +40,13 @@ public class TableUtils {
             this.tableView.setItems(sortedData);
             this.sortedData.comparatorProperty().bind(tableView.comparatorProperty());
             
-            // Configure table appearance
-            this.tableView.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+            // Configure table appearance — use UNCONSTRAINED so columns respect their set widths
+            this.tableView.setColumnResizePolicy(TableView.UNCONSTRAINED_RESIZE_POLICY);
             this.tableView.setPrefHeight(500);
             this.tableView.setMinHeight(400);
             
-            // Create container
-            this.container = new VBox();
+            // Create container — no spacing so search bar sits flush above table
+            this.container = new VBox(0);
             this.container.getStyleClass().add("enhanced-table-container");
             
             // Create filter controls
@@ -59,38 +59,41 @@ public class TableUtils {
         }
         
         private HBox createFilterControls() {
-            HBox controls = new HBox();
+            HBox controls = new HBox(8);
             controls.setAlignment(Pos.CENTER_LEFT);
+            controls.setPadding(new Insets(10, 12, 10, 12));
             controls.getStyleClass().add("table-search-controls");
-            
+
             Label searchLabel = new Label("Search:");
-            searchLabel.setStyle("-fx-font-weight: 700; -fx-font-size: 15px; -fx-text-fill: #374151; -fx-min-width: 60px;");
-            
+            searchLabel.setStyle("-fx-font-weight: 700; -fx-font-size: 13px; -fx-text-fill: #374151; -fx-min-width: 55px;");
+
             TextField searchField = new TextField();
             searchField.setPromptText("Search all columns...");
-            searchField.setPrefWidth(400);
-            searchField.setMaxWidth(400);
-            
+            searchField.setPrefWidth(300);
+            searchField.setMaxWidth(350);
+
             Button clearBtn = new Button("Clear");
             clearBtn.setGraphic(new FontIcon(FontAwesomeSolid.TIMES));
             clearBtn.getStyleClass().addAll("button-secondary");
-            clearBtn.setPrefWidth(100);
+            clearBtn.setMinWidth(90);
+            clearBtn.setPrefWidth(90);
             clearBtn.setOnAction(e -> {
                 searchField.clear();
                 clearAllFilters();
             });
-            
+
             Region spacer = new Region();
             HBox.setHgrow(spacer, Priority.ALWAYS);
-            
-            Button exportBtn = new Button("Export");
+
+            Button exportBtn = new Button("Export CSV");
             exportBtn.setGraphic(new FontIcon(FontAwesomeSolid.DOWNLOAD));
             exportBtn.getStyleClass().addAll("button-info");
-            exportBtn.setPrefWidth(110);
+            exportBtn.setMinWidth(110);
+            exportBtn.setPrefWidth(120);
             exportBtn.setTooltip(new Tooltip("Export table data"));
-            
+
             controls.getChildren().addAll(searchLabel, searchField, clearBtn, spacer, exportBtn);
-            
+
             return controls;
         }
         
