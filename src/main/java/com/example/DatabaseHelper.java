@@ -7,6 +7,10 @@ import java.util.HashMap;
 import java.util.Optional;
 import java.util.Map;
 import java.io.File;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import org.mindrot.jbcrypt.BCrypt;
+
 
 public class DatabaseHelper {
     // Changed DB name to ensure fresh schema creation and added AUTO_SERVER for better locking handling
@@ -32,13 +36,20 @@ public class DatabaseHelper {
         try (Connection conn = getConnection();
              Statement stmt = conn.createStatement()) {
 
-            // Create users table
+            // Create users table with VARCHAR(255) for BCrypt hashes
             String createUsers = "CREATE TABLE IF NOT EXISTS users (" +
                     "id INTEGER PRIMARY KEY AUTO_INCREMENT, " +
                     "username VARCHAR(50) UNIQUE NOT NULL, " +
-                    "password VARCHAR(50) NOT NULL, " +
+                    "password VARCHAR(255) NOT NULL, " +
                     "role VARCHAR(20) NOT NULL)";
             stmt.execute(createUsers);
+            
+            // Alter existing users table to support BCrypt hashes if needed
+            try {
+                stmt.execute("ALTER TABLE users ALTER COLUMN password VARCHAR(255)");
+            } catch (SQLException ignored) {
+                // Column already correct size or other non-critical error
+            }
 
             // Create residents table
             String createResidents = "CREATE TABLE IF NOT EXISTS residents (" +
@@ -52,6 +63,14 @@ public class DatabaseHelper {
                     "image_path VARCHAR(500), " +
                     "role VARCHAR(50))";
             stmt.execute(createResidents);
+            
+            // Add phone_number column if it doesn't exist
+            try {
+                stmt.execute("ALTER TABLE residents ADD COLUMN IF NOT EXISTS phone_number VARCHAR(20)");
+                System.out.println("✓ Phone number column added to residents table");
+            } catch (SQLException ignored) {
+                // Column already exists or other non-critical error
+            }
 
             // Create audit_log table for tracking all system operations
             String createAuditLog = "CREATE TABLE IF NOT EXISTS audit_log (" +
@@ -234,6 +253,9 @@ public class DatabaseHelper {
             // Initialize default permissions in database
             initializeDefaultPermissions();
             
+            // Update user table schema to include new columns
+            updateUserTableSchema();
+            
         } catch (SQLException e) {
             e.printStackTrace();
         }
@@ -241,23 +263,539 @@ public class DatabaseHelper {
 
     /**
      * Authenticate a user with username and password
+     * Supports both plain text passwords (legacy) and BCrypt hashed passwords
      * @param username The username (case-insensitive)
      * @param password The password
      * @return The user's role if authentication succeeds, null otherwise
      */
     public static String authenticate(String username, String password) {
         // Use LOWER() for case-insensitive username matching
-        String sql = "SELECT role FROM users WHERE LOWER(username) = ? AND password = ?";
+        String sql = "SELECT role, password FROM users WHERE LOWER(username) = ?";
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, username.toLowerCase());
-            pstmt.setString(2, password);
             ResultSet rs = pstmt.executeQuery();
             if (rs.next()) {
-                return rs.getString("role");
+                String storedPassword = rs.getString("password");
+                String role = rs.getString("role");
+                
+                // Check if password is BCrypt hashed (starts with $2a$, $2b$, or $2y$)
+                if (storedPassword.startsWith("$2a$") || storedPassword.startsWith("$2b$") || storedPassword.startsWith("$2y$")) {
+                    // BCrypt hashed password - use BCrypt.checkpw()
+                    if (BCrypt.checkpw(password, storedPassword)) {
+                        return role;
+                    }
+                } else {
+                    // Plain text password (legacy) - direct comparison
+                    if (password.equals(storedPassword)) {
+                        // Auto-upgrade to BCrypt hash
+                        String hashedPassword = BCrypt.hashpw(password, BCrypt.gensalt(12));
+                        updateUserPassword(username, hashedPassword);
+                        System.out.println("✓ Auto-upgraded password to BCrypt for user: " + username);
+                        return role;
+                    }
+                }
             }
         } catch (SQLException e) {
             e.printStackTrace();
+        }
+        return null;
+    }
+    
+    /**
+     * Update a user's password (internal method)
+     * @param username The username
+     * @param hashedPassword The BCrypt hashed password
+     */
+    private static void updateUserPassword(String username, String hashedPassword) {
+        String sql = "UPDATE users SET password = ? WHERE LOWER(username) = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, hashedPassword);
+            pstmt.setString(2, username.toLowerCase());
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+    
+    /**
+     * Hash all plain text passwords in the database with BCrypt
+     * @return Number of passwords hashed
+     */
+    public static int hashAllPlainTextPasswords() {
+        int count = 0;
+        String selectSql = "SELECT username, password FROM users";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(selectSql)) {
+            
+            while (rs.next()) {
+                String username = rs.getString("username");
+                String password = rs.getString("password");
+                
+                // Check if password is NOT already hashed
+                if (!password.startsWith("$2a$") && !password.startsWith("$2b$") && !password.startsWith("$2y$")) {
+                    // Hash the plain text password
+                    String hashedPassword = BCrypt.hashpw(password, BCrypt.gensalt(12));
+                    updateUserPassword(username, hashedPassword);
+                    count++;
+                    System.out.println("✓ Hashed password for user: " + username);
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return count;
+    }
+    
+    /**
+     * Create a new user with BCrypt hashed password
+     * @param username The username
+     * @param password The plain text password (will be hashed)
+     * @param role The user's role
+     * @return true if user created successfully, false otherwise
+     */
+    public static boolean createUser(String username, String password, String role) {
+        String hashedPassword = BCrypt.hashpw(password, BCrypt.gensalt(12));
+        String sql = "INSERT INTO users (username, password, role) VALUES (?, ?, ?)";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, username);
+            pstmt.setString(2, hashedPassword);
+            pstmt.setString(3, role);
+            pstmt.executeUpdate();
+            logAction("System", "User Created", "Created user: " + username + " with role: " + role, "Security");
+            return true;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+    
+    /**
+     * Change a user's password with BCrypt hashing
+     * @param username The username
+     * @param newPassword The new plain text password (will be hashed)
+     * @return true if password changed successfully, false otherwise
+     */
+    public static boolean changeUserPassword(String username, String newPassword) {
+        String hashedPassword = BCrypt.hashpw(newPassword, BCrypt.gensalt(12));
+        updateUserPassword(username, hashedPassword);
+        logAction("System", "Password Changed", "Changed password for user: " + username, "Security");
+        return true;
+    }
+
+    // ==================== USER MANAGEMENT METHODS ====================
+
+    /**
+     * Get all users from the database
+     * @return ObservableList of User objects
+     */
+    public static ObservableList<User> getAllUsers() {
+        ObservableList<User> users = FXCollections.observableArrayList();
+        String sql = "SELECT id, username, role, created_date, last_login, is_active, resident_id FROM users ORDER BY username";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                users.add(new User(
+                    rs.getInt("id"),
+                    rs.getString("username"),
+                    rs.getString("role"),
+                    rs.getString("created_date") != null ? rs.getString("created_date") : "Unknown",
+                    rs.getString("last_login") != null ? rs.getString("last_login") : "Never",
+                    rs.getBoolean("is_active"),
+                    rs.getInt("resident_id")
+                ));
+            }
+        } catch (SQLException e) {
+            // Handle case where new columns don't exist yet
+            String fallbackSql = "SELECT id, username, role FROM users ORDER BY username";
+            try (Connection conn = getConnection();
+                 Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(fallbackSql)) {
+                while (rs.next()) {
+                    users.add(new User(
+                        rs.getInt("id"),
+                        rs.getString("username"),
+                        rs.getString("role"),
+                        "Unknown",
+                        "Never",
+                        true,
+                        0
+                    ));
+                }
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+            }
+        }
+        return users;
+    }
+
+    /**
+     * Update user information
+     * @param userId The user ID
+     * @param username The new username
+     * @param role The new role
+     * @param isActive The active status
+     * @return true if update successful, false otherwise
+     */
+    public static boolean updateUser(int userId, String username, String role, boolean isActive) {
+        String sql = "UPDATE users SET username = ?, role = ?, is_active = ? WHERE id = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, username);
+            pstmt.setString(2, role);
+            pstmt.setBoolean(3, isActive);
+            pstmt.setInt(4, userId);
+            int rowsAffected = pstmt.executeUpdate();
+            if (rowsAffected > 0) {
+                logAction("System", "User Updated", "Updated user: " + username + " (ID: " + userId + ")", "User Management");
+                return true;
+            }
+        } catch (SQLException e) {
+            // Try fallback without is_active column
+            String fallbackSql = "UPDATE users SET username = ?, role = ? WHERE id = ?";
+            try (Connection conn = getConnection();
+                 PreparedStatement pstmt = conn.prepareStatement(fallbackSql)) {
+                pstmt.setString(1, username);
+                pstmt.setString(2, role);
+                pstmt.setInt(3, userId);
+                int rowsAffected = pstmt.executeUpdate();
+                if (rowsAffected > 0) {
+                    logAction("System", "User Updated", "Updated user: " + username + " (ID: " + userId + ")", "User Management");
+                    return true;
+                }
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Delete a user
+     * @param userId The user ID to delete
+     * @return true if deletion successful, false otherwise
+     */
+    public static boolean deleteUser(int userId) {
+        // First get username for logging
+        String username = "";
+        String getUserSql = "SELECT username FROM users WHERE id = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(getUserSql)) {
+            pstmt.setInt(1, userId);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                username = rs.getString("username");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+
+        String sql = "DELETE FROM users WHERE id = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, userId);
+            int rowsAffected = pstmt.executeUpdate();
+            if (rowsAffected > 0) {
+                logAction("System", "User Deleted", "Deleted user: " + username + " (ID: " + userId + ")", "User Management");
+                return true;
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return false;
+    }
+
+    /**
+     * Search users by username or role
+     * @param searchTerm The search term
+     * @return ObservableList of matching users
+     */
+    public static ObservableList<User> searchUsers(String searchTerm) {
+        ObservableList<User> users = FXCollections.observableArrayList();
+        String sql = "SELECT id, username, role, created_date, last_login, is_active, resident_id FROM users " +
+                    "WHERE LOWER(username) LIKE ? OR LOWER(role) LIKE ? ORDER BY username";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            String searchPattern = "%" + searchTerm.toLowerCase() + "%";
+            pstmt.setString(1, searchPattern);
+            pstmt.setString(2, searchPattern);
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                users.add(new User(
+                    rs.getInt("id"),
+                    rs.getString("username"),
+                    rs.getString("role"),
+                    rs.getString("created_date") != null ? rs.getString("created_date") : "Unknown",
+                    rs.getString("last_login") != null ? rs.getString("last_login") : "Never",
+                    rs.getBoolean("is_active"),
+                    rs.getInt("resident_id")
+                ));
+            }
+        } catch (SQLException e) {
+            // Fallback for older schema
+            String fallbackSql = "SELECT id, username, role FROM users " +
+                                "WHERE LOWER(username) LIKE ? OR LOWER(role) LIKE ? ORDER BY username";
+            try (Connection conn = getConnection();
+                 PreparedStatement pstmt = conn.prepareStatement(fallbackSql)) {
+                String searchPattern = "%" + searchTerm.toLowerCase() + "%";
+                pstmt.setString(1, searchPattern);
+                pstmt.setString(2, searchPattern);
+                ResultSet rs = pstmt.executeQuery();
+                while (rs.next()) {
+                    users.add(new User(
+                        rs.getInt("id"),
+                        rs.getString("username"),
+                        rs.getString("role"),
+                        "Unknown",
+                        "Never",
+                        true,
+                        0
+                    ));
+                }
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+            }
+        }
+        return users;
+    }
+
+    /**
+     * Filter users by role
+     * @param role The role to filter by
+     * @return ObservableList of users with the specified role
+     */
+    public static ObservableList<User> filterUsersByRole(String role) {
+        ObservableList<User> users = FXCollections.observableArrayList();
+        String sql = "SELECT id, username, role, created_date, last_login, is_active, resident_id FROM users " +
+                    "WHERE role = ? ORDER BY username";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, role);
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                users.add(new User(
+                    rs.getInt("id"),
+                    rs.getString("username"),
+                    rs.getString("role"),
+                    rs.getString("created_date") != null ? rs.getString("created_date") : "Unknown",
+                    rs.getString("last_login") != null ? rs.getString("last_login") : "Never",
+                    rs.getBoolean("is_active"),
+                    rs.getInt("resident_id")
+                ));
+            }
+        } catch (SQLException e) {
+            // Fallback for older schema
+            String fallbackSql = "SELECT id, username, role FROM users WHERE role = ? ORDER BY username";
+            try (Connection conn = getConnection();
+                 PreparedStatement pstmt = conn.prepareStatement(fallbackSql)) {
+                pstmt.setString(1, role);
+                ResultSet rs = pstmt.executeQuery();
+                while (rs.next()) {
+                    users.add(new User(
+                        rs.getInt("id"),
+                        rs.getString("username"),
+                        rs.getString("role"),
+                        "Unknown",
+                        "Never",
+                        true,
+                        0
+                    ));
+                }
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+            }
+        }
+        return users;
+    }
+
+    /**
+     * Update user table schema to include new columns
+     */
+    public static void updateUserTableSchema() {
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement()) {
+            
+            // Add created_date column if it doesn't exist
+            try {
+                stmt.execute("ALTER TABLE users ADD COLUMN created_date VARCHAR(30) DEFAULT '" + 
+                    java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) + "'");
+                System.out.println("✓ Added created_date column to users table");
+            } catch (SQLException e) {
+                // Column already exists or other error
+            }
+            
+            // Add last_login column if it doesn't exist
+            try {
+                stmt.execute("ALTER TABLE users ADD COLUMN last_login VARCHAR(30) DEFAULT 'Never'");
+                System.out.println("✓ Added last_login column to users table");
+            } catch (SQLException e) {
+                // Column already exists or other error
+            }
+            
+            // Add is_active column if it doesn't exist
+            try {
+                stmt.execute("ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT TRUE");
+                System.out.println("✓ Added is_active column to users table");
+            } catch (SQLException e) {
+                // Column already exists or other error
+            }
+            
+            // Add resident_id column to link users to residents
+            try {
+                stmt.execute("ALTER TABLE users ADD COLUMN resident_id INTEGER DEFAULT NULL");
+                System.out.println("✓ Added resident_id column to users table");
+            } catch (SQLException e) {
+                // Column already exists or other error
+            }
+            
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Create user account from existing resident
+     * @param residentId The resident ID to create account for
+     * @param username The username for the account
+     * @param password The password for the account
+     * @param role The role to assign
+     * @return true if successful, false otherwise
+     */
+    public static boolean createUserFromResident(int residentId, String username, String password, String role) {
+        // Check if resident exists
+        Optional<Resident> resident = getResidentById(residentId);
+        if (!resident.isPresent()) {
+            return false;
+        }
+        
+        // Check if resident already has a user account
+        if (getUserByResidentId(residentId) != null) {
+            return false; // Resident already has an account
+        }
+        
+        String hashedPassword = BCrypt.hashpw(password, BCrypt.gensalt(12));
+        String sql = "INSERT INTO users (username, password, role, resident_id, created_date, is_active) VALUES (?, ?, ?, ?, ?, ?)";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, username);
+            pstmt.setString(2, hashedPassword);
+            pstmt.setString(3, role);
+            pstmt.setInt(4, residentId);
+            pstmt.setString(5, java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            pstmt.setBoolean(6, true);
+            
+            int rowsAffected = pstmt.executeUpdate();
+            if (rowsAffected > 0) {
+                Resident res = resident.get();
+                logAction("System", "User Account Created", 
+                    "Created user account '" + username + "' for resident: " + res.getFirstName() + " " + res.getLastName() + 
+                    " (Role: " + role + ")", "User Management");
+                return true;
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return false;
+    }
+
+    /**
+     * Get user by resident ID
+     * @param residentId The resident ID
+     * @return User object if found, null otherwise
+     */
+    public static User getUserByResidentId(int residentId) {
+        String sql = "SELECT id, username, role, created_date, last_login, is_active, resident_id FROM users WHERE resident_id = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, residentId);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                return new User(
+                    rs.getInt("id"),
+                    rs.getString("username"),
+                    rs.getString("role"),
+                    rs.getString("created_date") != null ? rs.getString("created_date") : "Unknown",
+                    rs.getString("last_login") != null ? rs.getString("last_login") : "Never",
+                    rs.getBoolean("is_active"),
+                    rs.getInt("resident_id")
+                );
+            }
+        } catch (SQLException e) {
+            // Fallback for older schema without resident_id
+            return null;
+        }
+        return null;
+    }
+
+    /**
+     * Get residents who don't have user accounts yet
+     * @return ObservableList of residents without user accounts
+     */
+    public static ObservableList<Resident> getResidentsWithoutAccounts() {
+        ObservableList<Resident> residents = FXCollections.observableArrayList();
+        String sql = "SELECT r.* FROM residents r LEFT JOIN users u ON r.id = u.resident_id WHERE u.resident_id IS NULL ORDER BY r.last_name, r.first_name";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                Resident resident = new Resident(
+                    rs.getInt("id"),
+                    rs.getString("first_name"),
+                    rs.getString("middle_name"),
+                    rs.getString("last_name"),
+                    rs.getString("birth_date"),
+                    rs.getString("gender"),
+                    rs.getString("address"),
+                    rs.getInt("family_id"),
+                    rs.getString("house_unit"),
+                    rs.getString("street"),
+                    rs.getString("subdivision"),
+                    rs.getString("gate_color"),
+                    rs.getInt("vaccination_count")
+                );
+                resident.setImagePath(rs.getString("image_path"));
+                resident.setRole(rs.getString("role"));
+                resident.setPhoneNumber(rs.getString("phone_number"));
+                residents.add(resident);
+            }
+        } catch (SQLException e) {
+            // Fallback - get all residents if join fails
+            return getAllResidentsSimple();
+        }
+        return residents;
+    }
+
+    /**
+     * Simple method to get all residents (fallback)
+     */
+    private static ObservableList<Resident> getAllResidentsSimple() {
+        return getResidents("", 0, 1000, "last_name", "ASC");
+    }
+
+    /**
+     * Get resident information for a user
+     * @param userId The user ID
+     * @return Resident object if found, null otherwise
+     */
+    public static Resident getResidentForUser(int userId) {
+        String sql = "SELECT u.resident_id FROM users u WHERE u.id = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, userId);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                int residentId = rs.getInt("resident_id");
+                if (residentId > 0) {
+                    Optional<Resident> resident = getResidentById(residentId);
+                    return resident.orElse(null);
+                }
+            }
+        } catch (SQLException e) {
+            // Column doesn't exist yet
         }
         return null;
     }
@@ -637,6 +1175,7 @@ public class DatabaseHelper {
                         rs.getObject("vaccination_count", Integer.class));
                 resident.setImagePath(rs.getString("image_path"));
                 resident.setRole(rs.getString("role"));
+                resident.setPhoneNumber(rs.getString("phone_number"));
                 residents.add(resident);
             }
         } catch (SQLException e) {
@@ -651,8 +1190,8 @@ public class DatabaseHelper {
      */
     public static void addResident(Resident resident) {
         String sql = "INSERT INTO residents(first_name, middle_name, last_name, birth_date, gender, address, image_path, role, " +
-                    "family_id, house_unit, street, subdivision, gate_color, vaccination_count) " +
-                    "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    "phone_number, family_id, house_unit, street, subdivision, gate_color, vaccination_count) " +
+                    "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, resident.getFirstName());
@@ -663,23 +1202,24 @@ public class DatabaseHelper {
             pstmt.setString(6, resident.getAddress());
             pstmt.setString(7, resident.getImagePath());
             pstmt.setString(8, resident.getRole());
+            pstmt.setString(9, resident.getPhoneNumber());
             
             // Extended fields
             Integer familyId = resident.getFamilyId();
             if (familyId != null && familyId > 0) {
-                pstmt.setInt(9, familyId);
+                pstmt.setInt(10, familyId);
             } else {
-                pstmt.setNull(9, java.sql.Types.INTEGER);
+                pstmt.setNull(10, java.sql.Types.INTEGER);
             }
-            pstmt.setString(10, resident.getHouseUnit());
-            pstmt.setString(11, resident.getStreet());
-            pstmt.setString(12, resident.getSubdivision());
-            pstmt.setString(13, resident.getGateColor());
+            pstmt.setString(11, resident.getHouseUnit());
+            pstmt.setString(12, resident.getStreet());
+            pstmt.setString(13, resident.getSubdivision());
+            pstmt.setString(14, resident.getGateColor());
             Integer vacCount = resident.getVaccinationCount();
             if (vacCount != null && vacCount > 0) {
-                pstmt.setInt(14, vacCount);
+                pstmt.setInt(15, vacCount);
             } else {
-                pstmt.setInt(14, 0);
+                pstmt.setInt(15, 0);
             }
             
             pstmt.executeUpdate();
@@ -860,7 +1400,7 @@ public class DatabaseHelper {
      */
     public static void updateResident(Resident resident) {
         String sql = "UPDATE residents SET first_name = ?, middle_name = ?, last_name = ?, birth_date = ?, gender = ?, address = ?, image_path = ?, role = ?, " +
-                    "family_id = ?, house_unit = ?, street = ?, subdivision = ?, gate_color = ?, vaccination_count = ? WHERE id = ?";
+                    "phone_number = ?, family_id = ?, house_unit = ?, street = ?, subdivision = ?, gate_color = ?, vaccination_count = ? WHERE id = ?";
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, resident.getFirstName());
@@ -871,25 +1411,26 @@ public class DatabaseHelper {
             pstmt.setString(6, resident.getAddress());
             pstmt.setString(7, resident.getImagePath());
             pstmt.setString(8, resident.getRole());
+            pstmt.setString(9, resident.getPhoneNumber());
             
             // Extended fields
             Integer familyId = resident.getFamilyId();
             if (familyId != null && familyId > 0) {
-                pstmt.setInt(9, familyId);
+                pstmt.setInt(10, familyId);
             } else {
-                pstmt.setNull(9, java.sql.Types.INTEGER);
+                pstmt.setNull(10, java.sql.Types.INTEGER);
             }
-            pstmt.setString(10, resident.getHouseUnit());
-            pstmt.setString(11, resident.getStreet());
-            pstmt.setString(12, resident.getSubdivision());
-            pstmt.setString(13, resident.getGateColor());
+            pstmt.setString(11, resident.getHouseUnit());
+            pstmt.setString(12, resident.getStreet());
+            pstmt.setString(13, resident.getSubdivision());
+            pstmt.setString(14, resident.getGateColor());
             Integer vacCount = resident.getVaccinationCount();
             if (vacCount != null && vacCount > 0) {
-                pstmt.setInt(14, vacCount);
+                pstmt.setInt(15, vacCount);
             } else {
-                pstmt.setInt(14, 0);
+                pstmt.setInt(15, 0);
             }
-            pstmt.setInt(15, resident.getId());
+            pstmt.setInt(16, resident.getId());
             pstmt.executeUpdate();
             logAction("System", "Updated resident information: " + resident.getFirstName() + " " + resident.getLastName(), "Resident " + resident.getLastName() + ", " + resident.getFirstName(), "Resident");
         } catch (SQLException e) {
@@ -941,6 +1482,7 @@ public class DatabaseHelper {
                         rs.getObject("vaccination_count", Integer.class));
                 resident.setImagePath(rs.getString("image_path"));
                 resident.setRole(rs.getString("role"));
+                resident.setPhoneNumber(rs.getString("phone_number"));
                 return Optional.of(resident);
             }
         } catch (SQLException e) {
@@ -1309,6 +1851,25 @@ public class DatabaseHelper {
     public static int getActiveCasesCount() {
         int count = 0;
         String sql = "SELECT COUNT(*) FROM complaints WHERE status IN ('Pending', 'Ongoing')";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                count = rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return count;
+    }
+
+    /**
+     * Get count of issued/completed document requests
+     * Used by: Enhanced dashboard stat card
+     */
+    public static int getIssuedDocumentsCount() {
+        int count = 0;
+        String sql = "SELECT COUNT(*) FROM document_requests WHERE status IN ('COMPLETED', 'APPROVED')";
         try (Connection conn = getConnection();
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
@@ -1925,197 +2486,6 @@ public class DatabaseHelper {
         return null;
     }
 
-    // ==================== NOTIFICATION METHODS ====================
-    
-    public static void initializeNotificationsTable() {
-        try (Connection conn = getConnection();
-             Statement stmt = conn.createStatement()) {
-            
-            String createNotifications = "CREATE TABLE IF NOT EXISTS notifications (" +
-                    "id INTEGER PRIMARY KEY AUTO_INCREMENT, " +
-                    "title VARCHAR(200) NOT NULL, " +
-                    "message VARCHAR(1000) NOT NULL, " +
-                    "type VARCHAR(20) NOT NULL, " + // INFO, WARNING, SUCCESS, ERROR
-                    "timestamp VARCHAR(30) NOT NULL, " +
-                    "is_read BOOLEAN DEFAULT FALSE, " +
-                    "action_url VARCHAR(200), " +
-                    "icon VARCHAR(50))";
-            stmt.execute(createNotifications);
-            System.out.println("✓ Notifications table initialized");
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-    }
-
-    static {
-        initializeNotificationsTable();
-    }
-
-    public static ObservableList<Notification> getAllNotifications() {
-        ObservableList<Notification> notifications = FXCollections.observableArrayList();
-        String sql = "SELECT * FROM notifications ORDER BY timestamp DESC";
-        try (Connection conn = getConnection();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
-            while (rs.next()) {
-                notifications.add(new Notification(
-                    rs.getInt("id"),
-                    rs.getString("title"),
-                    rs.getString("message"),
-                    rs.getString("type"),
-                    rs.getString("timestamp"),
-                    rs.getBoolean("is_read"),
-                    rs.getString("action_url"),
-                    rs.getString("icon")
-                ));
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return notifications;
-    }
-
-    public static ObservableList<Notification> getUnreadNotifications() {
-        ObservableList<Notification> notifications = FXCollections.observableArrayList();
-        String sql = "SELECT * FROM notifications WHERE is_read = FALSE ORDER BY timestamp DESC LIMIT 10";
-        try (Connection conn = getConnection();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
-            while (rs.next()) {
-                notifications.add(new Notification(
-                    rs.getInt("id"),
-                    rs.getString("title"),
-                    rs.getString("message"),
-                    rs.getString("type"),
-                    rs.getString("timestamp"),
-                    rs.getBoolean("is_read"),
-                    rs.getString("action_url"),
-                    rs.getString("icon")
-                ));
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return notifications;
-    }
-
-    public static int getUnreadNotificationCount() {
-        String sql = "SELECT COUNT(*) FROM notifications WHERE is_read = FALSE";
-        try (Connection conn = getConnection();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
-            if (rs.next()) {
-                return rs.getInt(1);
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return 0;
-    }
-
-    public static void addNotification(Notification notification) {
-        String sql = "INSERT INTO notifications (title, message, type, timestamp, is_read, action_url, icon) VALUES (?, ?, ?, ?, ?, ?, ?)";
-        try (Connection conn = getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, notification.getTitle());
-            pstmt.setString(2, notification.getMessage());
-            pstmt.setString(3, notification.getType());
-            pstmt.setString(4, notification.getTimestamp());
-            pstmt.setBoolean(5, notification.isRead());
-            pstmt.setString(6, notification.getActionUrl());
-            pstmt.setString(7, notification.getIcon());
-            pstmt.executeUpdate();
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-    }
-
-    public static void markNotificationAsRead(int notificationId) {
-        String sql = "UPDATE notifications SET is_read = TRUE WHERE id = ?";
-        try (Connection conn = getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setInt(1, notificationId);
-            pstmt.executeUpdate();
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-    }
-
-    public static void markAllNotificationsAsRead() {
-        String sql = "UPDATE notifications SET is_read = TRUE WHERE is_read = FALSE";
-        try (Connection conn = getConnection();
-             Statement stmt = conn.createStatement()) {
-            stmt.executeUpdate(sql);
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-    }
-
-    public static void deleteNotification(int notificationId) {
-        String sql = "DELETE FROM notifications WHERE id = ?";
-        try (Connection conn = getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setInt(1, notificationId);
-            pstmt.executeUpdate();
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-    }
-
-    public static void deleteAllReadNotifications() {
-        String sql = "DELETE FROM notifications WHERE is_read = TRUE";
-        try (Connection conn = getConnection();
-             Statement stmt = conn.createStatement()) {
-            stmt.executeUpdate(sql);
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-    }
-
-    // Create sample notifications for testing
-    public static void createSampleNotifications() {
-        try (Connection conn = getConnection();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM notifications")) {
-            if (rs.next() && rs.getInt(1) == 0) {
-                System.out.println("Creating sample notifications...");
-                addNotification(new Notification(
-                    "New Document Request",
-                    "Maria Clara requested a Barangay Clearance",
-                    "INFO",
-                    "bell"
-                ));
-                addNotification(new Notification(
-                    "Complaint Submitted",
-                    "New complaint about street lighting in Zone 3",
-                    "WARNING",
-                    "exclamation-triangle"
-                ));
-                addNotification(new Notification(
-                    "Payment Received",
-                    "₱150 payment received for Certificate of Residency",
-                    "SUCCESS",
-                    "check-circle"
-                ));
-                addNotification(new Notification(
-                    "System Backup",
-                    "Database backup completed successfully",
-                    "SUCCESS",
-                    "database"
-                ));
-                addNotification(new Notification(
-                    "Announcement Posted",
-                    "New event: Barangay Fiesta 2026 announced",
-                    "INFO",
-                    "bullhorn"
-                ));
-                System.out.println("✓ Sample notifications created");
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-    }
-
     /**
      * Backup the database to a specified path
      * WARNING: Ensure backupPath is validated before calling this method
@@ -2310,5 +2680,476 @@ public class DatabaseHelper {
         result.put("success", successCount);
         result.put("failed", failedCount);
         return result;
+    }
+    
+    // ==================== SMS CONFIGURATION & LOGGING ====================
+    
+    /**
+     * Initialize SMS-related tables
+     */
+    private static void initializeSMSTables() {
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement()) {
+            
+            // Create SMS configuration table
+            String createSMSConfig = "CREATE TABLE IF NOT EXISTS sms_config (" +
+                    "id INTEGER PRIMARY KEY AUTO_INCREMENT, " +
+                    "api_key VARCHAR(255), " +
+                    "api_base_url VARCHAR(255) DEFAULT 'https://unismsapi.com/api', " +
+                    "sender_name VARCHAR(11), " +
+                    "enabled BOOLEAN DEFAULT FALSE, " +
+                    "last_updated DATETIME DEFAULT CURRENT_TIMESTAMP)";
+            stmt.execute(createSMSConfig);
+            
+            // Add api_base_url column if it doesn't exist (for existing databases)
+            try {
+                stmt.execute("ALTER TABLE sms_config ADD COLUMN IF NOT EXISTS api_base_url VARCHAR(255) DEFAULT 'https://unismsapi.com/api'");
+            } catch (SQLException e) {
+                // Column might already exist, ignore
+            }
+            
+            // Create SMS log table
+            String createSMSLog = "CREATE TABLE IF NOT EXISTS sms_log (" +
+                    "id INTEGER PRIMARY KEY AUTO_INCREMENT, " +
+                    "phone_number VARCHAR(50) NOT NULL, " +
+                    "message VARCHAR(1000) NOT NULL, " +
+                    "status VARCHAR(20) NOT NULL, " + // SENT, FAILED, ERROR, SENT_PRIORITY, SENT_OTP, SENT_BULK
+                    "message_id VARCHAR(50), " +
+                    "error_code VARCHAR(100), " +
+                    "sent_at DATETIME DEFAULT CURRENT_TIMESTAMP)";
+            stmt.execute(createSMSLog);
+            
+            // Create indexes separately (H2 syntax)
+            try {
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_sms_log_timestamp ON sms_log(sent_at)");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_sms_log_status ON sms_log(status)");
+            } catch (SQLException e) {
+                // Indexes might already exist, ignore
+            }
+            
+            // Create SMS templates table
+            String createSMSTemplates = "CREATE TABLE IF NOT EXISTS sms_templates (" +
+                    "id INTEGER PRIMARY KEY AUTO_INCREMENT, " +
+                    "name VARCHAR(100) UNIQUE NOT NULL, " +
+                    "template VARCHAR(500) NOT NULL, " +
+                    "description VARCHAR(200), " +
+                    "category VARCHAR(50))"; // DOCUMENT, COMPLAINT, ANNOUNCEMENT, OTP
+            stmt.execute(createSMSTemplates);
+            
+            // Insert default SMS templates if table is empty
+            try (ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM sms_templates")) {
+                if (rs.next() && rs.getInt(1) == 0) {
+                    System.out.println("Inserting default SMS templates...");
+                    String[] templates = {
+                        "INSERT INTO sms_templates (name, template, description, category) VALUES " +
+                        "('Document Approved', 'Your {document_type} request has been approved. You may claim it at the Barangay Hall. - Barangay San Isidro', 'Document request approval notification', 'DOCUMENT')",
+                        
+                        "INSERT INTO sms_templates (name, template, description, category) VALUES " +
+                        "('Document Ready', 'Your {document_type} is now ready for pickup. Please bring a valid ID. - Barangay San Isidro', 'Document ready for pickup', 'DOCUMENT')",
+                        
+                        "INSERT INTO sms_templates (name, template, description, category) VALUES " +
+                        "('Complaint Received', 'Your complaint \"{title}\" has been received. Reference: {complaint_id}. We will update you soon. - Barangay San Isidro', 'Complaint submission confirmation', 'COMPLAINT')",
+                        
+                        "INSERT INTO sms_templates (name, template, description, category) VALUES " +
+                        "('Complaint Resolved', 'Your complaint \"{title}\" has been resolved. Thank you for your patience. - Barangay San Isidro', 'Complaint resolution notification', 'COMPLAINT')",
+                        
+                        "INSERT INTO sms_templates (name, template, description, category) VALUES " +
+                        "('Announcement', '{title}: {content} - Barangay San Isidro', 'General announcement notification', 'ANNOUNCEMENT')",
+                        
+                        "INSERT INTO sms_templates (name, template, description, category) VALUES " +
+                        "('Emergency Alert', 'EMERGENCY: {content} Please stay safe. - Barangay San Isidro', 'Emergency alert notification', 'ANNOUNCEMENT')",
+                        
+                        "INSERT INTO sms_templates (name, template, description, category) VALUES " +
+                        "('OTP Code', 'Your verification code is: {otp}. Valid for 10 minutes. Do not share this code. - Barangay San Isidro', 'OTP verification code', 'OTP')",
+                        
+                        "INSERT INTO sms_templates (name, template, description, category) VALUES " +
+                        "('Payment Reminder', 'Reminder: Your {document_type} payment of P{amount} is due. Please settle at the Barangay Hall. - Barangay San Isidro', 'Payment reminder', 'DOCUMENT')"
+                    };
+                    for (String insert : templates) {
+                        stmt.execute(insert);
+                    }
+                    System.out.println("✓ Default SMS templates inserted");
+                }
+            }
+            
+            System.out.println("✓ SMS tables initialized");
+            
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+    
+    static {
+        initializeSMSTables();
+        // Initialize with provided API key if no config exists
+        initializeDefaultSMSConfig();
+    }
+    
+    /**
+     * Initialize default SMS configuration if none exists
+     */
+    private static void initializeDefaultSMSConfig() {
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement()) {
+            
+            // Check if SMS config exists
+            ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM sms_config");
+            if (rs.next() && rs.getInt(1) == 0) {
+                // Insert default configuration with provided API key
+                String insertSql = "INSERT INTO sms_config (api_key, api_base_url, sender_name, enabled, last_updated) VALUES (?, ?, ?, ?, ?)";
+                try (PreparedStatement pstmt = conn.prepareStatement(insertSql)) {
+                    pstmt.setString(1, "sk_6b87cce0-218a-4bad-8ead-571a12ef44ec"); // UniSMS API key
+                    pstmt.setString(2, "https://unismsapi.com/api"); // UniSMS base URL
+                    pstmt.setString(3, "BDMS");
+                    pstmt.setBoolean(4, true); // Enable SMS by default
+                    pstmt.setString(5, LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+                    pstmt.executeUpdate();
+                    System.out.println("✓ SMS configuration initialized with UniSMS API key");
+                }
+            }
+            
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+    
+    /**
+     * Get SMS API base URL from configuration
+     * @return API base URL or default if not configured
+     */
+    public static String getSMSApiBaseUrl() {
+        String sql = "SELECT api_base_url FROM sms_config LIMIT 1";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                String url = rs.getString("api_base_url");
+                return url != null && !url.trim().isEmpty() ? url : "https://unismsapi.com/api";
+            }
+        } catch (SQLException e) {
+            // Column might not exist in old databases
+            e.printStackTrace();
+        }
+        return "https://unismsapi.com/api"; // Default UniSMS URL
+    }
+    
+    /**
+     * Get SMS API key from configuration
+     * @return API key or null if not configured
+     */
+    public static String getSMSApiKey() {
+        String sql = "SELECT api_key FROM sms_config ORDER BY id DESC LIMIT 1";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                return rs.getString("api_key");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+    
+    /**
+     * Get SMS sender name from configuration
+     * @return Sender name or "BDMS" as default
+     */
+    public static String getSMSSenderName() {
+        String sql = "SELECT sender_name FROM sms_config ORDER BY id DESC LIMIT 1";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                String senderName = rs.getString("sender_name");
+                return (senderName != null && !senderName.trim().isEmpty()) ? senderName : "BDMS";
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return "BDMS";
+    }
+    
+    /**
+     * Check if SMS notifications are enabled
+     * @return true if enabled, false otherwise
+     */
+    public static boolean isSMSEnabled() {
+        String sql = "SELECT enabled FROM sms_config ORDER BY id DESC LIMIT 1";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                return rs.getBoolean("enabled");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return false;
+    }
+    
+    /**
+     * Save SMS configuration
+     * @param apiKey SMS API PH key
+     * @param apiBaseUrl API base URL
+     * @param senderName Sender name (not used by SMS API PH, kept for compatibility)
+     * @param enabled Enable/disable SMS notifications
+     */
+    public static void saveSMSConfig(String apiKey, String apiBaseUrl, String senderName, boolean enabled) {
+        // Delete existing config
+        String deleteSql = "DELETE FROM sms_config";
+        String insertSql = "INSERT INTO sms_config (api_key, api_base_url, sender_name, enabled, last_updated) VALUES (?, ?, ?, ?, ?)";
+        
+        try (Connection conn = getConnection();
+             Statement deleteStmt = conn.createStatement();
+             PreparedStatement insertPstmt = conn.prepareStatement(insertSql)) {
+            
+            deleteStmt.execute(deleteSql);
+            
+            insertPstmt.setString(1, apiKey);
+            insertPstmt.setString(2, apiBaseUrl != null && !apiBaseUrl.trim().isEmpty() ? apiBaseUrl : "https://unismsapi.com/api");
+            insertPstmt.setString(3, senderName);
+            insertPstmt.setBoolean(4, enabled);
+            insertPstmt.setString(5, LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            insertPstmt.executeUpdate();
+            
+            logAction("System", "Updated SMS configuration", 
+                     "Enabled: " + enabled + ", Sender: " + senderName + ", API URL: " + apiBaseUrl, "SMS");
+            
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+    
+    /**
+     * Save SMS configuration (backward compatibility)
+     * @param apiKey SMS API PH key
+     * @param senderName Sender name (not used by SMS API PH, kept for compatibility)
+     * @param enabled Enable/disable SMS notifications
+     */
+    public static void saveSMSConfig(String apiKey, String senderName, boolean enabled) {
+        saveSMSConfig(apiKey, null, senderName, enabled);
+    }
+    
+    /**
+     * Log SMS transaction
+     * @param phoneNumber Recipient phone number
+     * @param message Message content
+     * @param status Status (SENT, FAILED, ERROR, etc.)
+     * @param messageId SMS API PH message ID
+     * @param errorCode Error code if failed
+     */
+    public static void logSMS(String phoneNumber, String message, String status, String messageId, String errorCode) {
+        String sql = "INSERT INTO sms_log (phone_number, message, status, message_id, error_code, sent_at) VALUES (?, ?, ?, ?, ?, ?)";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            
+            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            
+            pstmt.setString(1, phoneNumber);
+            pstmt.setString(2, message);
+            pstmt.setString(3, status);
+            pstmt.setString(4, messageId);
+            pstmt.setString(5, errorCode);
+            pstmt.setString(6, timestamp);
+            
+            int rowsAffected = pstmt.executeUpdate();
+            
+            if (rowsAffected > 0) {
+                System.out.println("✓ SMS log entry created: " + phoneNumber + " - " + status + " at " + timestamp);
+            } else {
+                System.err.println("✗ SMS log entry not created (0 rows affected)");
+            }
+            
+        } catch (SQLException e) {
+            System.err.println("✗ SQL Exception in logSMS: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    /**
+     * Get SMS log entries
+     * @param limit Maximum number of entries to return
+     * @return List of SMS log entries
+     */
+    public static ObservableList<SMSLogEntry> getSMSLog(int limit) {
+        ObservableList<SMSLogEntry> logs = FXCollections.observableArrayList();
+        String sql = "SELECT * FROM sms_log ORDER BY sent_at DESC LIMIT ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, limit);
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                logs.add(new SMSLogEntry(
+                    rs.getInt("id"),
+                    rs.getString("phone_number"),
+                    rs.getString("message"),
+                    rs.getString("status"),
+                    rs.getString("message_id"),
+                    rs.getString("error_code"),
+                    rs.getString("sent_at")
+                ));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return logs;
+    }
+    
+    /**
+     * Get SMS log entries (alias for getSMSLog)
+     * @param limit Maximum number of entries to return
+     * @return List of SMS log entries
+     */
+    public static ObservableList<SMSLogEntry> getSMSLogs(int limit) {
+        return getSMSLog(limit);
+    }
+    
+    /**
+     * Get SMS statistics
+     * @return Map containing SMS statistics
+     */
+    public static Map<String, Integer> getSMSStatistics() {
+        Map<String, Integer> stats = new HashMap<>();
+        String sql = "SELECT status, COUNT(*) as count FROM sms_log GROUP BY status";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                stats.put(rs.getString("status"), rs.getInt("count"));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return stats;
+    }
+    
+    /**
+     * Get SMS template by name
+     * @param name Template name
+     * @return Template string or null if not found
+     */
+    public static String getSMSTemplate(String name) {
+        String sql = "SELECT template FROM sms_templates WHERE name = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, name);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                return rs.getString("template");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+    
+    /**
+     * Get all SMS templates
+     * @return List of SMS templates
+     */
+    public static ObservableList<SMSTemplate> getAllSMSTemplates() {
+        ObservableList<SMSTemplate> templates = FXCollections.observableArrayList();
+        String sql = "SELECT * FROM sms_templates ORDER BY category, name";
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                templates.add(new SMSTemplate(
+                    rs.getInt("id"),
+                    rs.getString("name"),
+                    rs.getString("template"),
+                    rs.getString("description"),
+                    rs.getString("category")
+                ));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return templates;
+    }
+    
+    /**
+     * Save or update SMS template
+     * @param name Template name
+     * @param template Template content
+     * @param category Template category
+     * @param description Template description
+     */
+    public static void saveSMSTemplate(String name, String template, String category, String description) {
+        // Check if template exists
+        String checkSql = "SELECT id FROM sms_templates WHERE name = ?";
+        String updateSql = "UPDATE sms_templates SET template = ?, category = ?, description = ? WHERE name = ?";
+        String insertSql = "INSERT INTO sms_templates (name, template, category, description) VALUES (?, ?, ?, ?)";
+        
+        try (Connection conn = getConnection()) {
+            // Check if exists
+            boolean exists = false;
+            try (PreparedStatement checkStmt = conn.prepareStatement(checkSql)) {
+                checkStmt.setString(1, name);
+                ResultSet rs = checkStmt.executeQuery();
+                exists = rs.next();
+            }
+            
+            if (exists) {
+                // Update existing
+                try (PreparedStatement updateStmt = conn.prepareStatement(updateSql)) {
+                    updateStmt.setString(1, template);
+                    updateStmt.setString(2, category);
+                    updateStmt.setString(3, description);
+                    updateStmt.setString(4, name);
+                    updateStmt.executeUpdate();
+                }
+            } else {
+                // Insert new
+                try (PreparedStatement insertStmt = conn.prepareStatement(insertSql)) {
+                    insertStmt.setString(1, name);
+                    insertStmt.setString(2, template);
+                    insertStmt.setString(3, category);
+                    insertStmt.setString(4, description);
+                    insertStmt.executeUpdate();
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+    
+    /**
+     * Update SMS template
+     * @param id Template ID
+     * @param template New template content
+     */
+    public static void updateSMSTemplate(int id, String template) {
+        String sql = "UPDATE sms_templates SET template = ? WHERE id = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, template);
+            pstmt.setInt(2, id);
+            pstmt.executeUpdate();
+            logAction("System", "Updated SMS template (ID: " + id + ")", template, "SMS");
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+    
+    /**
+     * Get resident phone number by ID
+     * @param residentId Resident ID
+     * @return Phone number or null if not found
+     */
+    public static String getResidentPhoneNumber(int residentId) {
+        String sql = "SELECT phone_number FROM residents WHERE id = ?";
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, residentId);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                return rs.getString("phone_number");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 }

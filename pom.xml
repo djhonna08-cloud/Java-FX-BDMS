@@ -72,6 +72,12 @@
             <artifactId>slf4j-simple</artifactId>
             <version>1.7.36</version>
         </dependency>
+        <!-- BCrypt for password hashing -->
+        <dependency>
+            <groupId>org.mindrot</groupId>
+            <artifactId>jbcrypt</artifactId>
+            <version>0.4</version>
+        </dependency>
     </dependencies>
     <build>
         <resources>
@@ -99,6 +105,12 @@
                 <version>3.1.0</version>
                 <configuration>
                     <mainClass>com.example.Launcher</mainClass>
+                    <args>
+                        <arg>-classpath</arg>
+                        <classpath/>
+                        <arg>com.example.Launcher</arg>
+                    </args>
+                    <commandlineArgs>-Xms256m -Xmx512m</commandlineArgs>
                 </configuration>
             </plugin>
             <plugin>

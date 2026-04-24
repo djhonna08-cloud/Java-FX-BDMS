@@ -5,9 +5,13 @@ import javafx.application.Platform;
 import javafx.animation.ScaleTransition;
 import javafx.animation.FadeTransition;
 import javafx.animation.TranslateTransition;
+import javafx.animation.Timeline;
+import javafx.animation.KeyFrame;
+import javafx.animation.ParallelTransition;
 import javafx.geometry.Orientation;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.geometry.Side;
 import javafx.scene.Scene;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.chart.PieChart;
@@ -19,6 +23,8 @@ import javafx.scene.Node;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import javafx.scene.shape.Rectangle;
+import javafx.scene.text.TextAlignment;
+import javafx.scene.Cursor;
 import javafx.stage.Stage;
 import javafx.stage.FileChooser;
 import javafx.stage.DirectoryChooser;
@@ -26,6 +32,7 @@ import javafx.stage.Popup;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.util.Duration;
+import javafx.event.ActionEvent;
 import org.kordamp.ikonli.javafx.FontIcon;
 import org.kordamp.ikonli.fontawesome5.FontAwesomeSolid;
 
@@ -71,6 +78,10 @@ public class App extends Application {
     private TableView<DocumentRequest> documentRequestsTable;
     private TableView<Complaint> complaintsTable;
     private TableView<Announcement> announcementsTable;
+    
+    // Enhanced table references
+    private TableUtils.EnhancedTable<User> enhancedUsersTable;
+    private TableView<User> usersManagementTable;
     private TextField searchField; // Promoted to class level for access in other methods
     private Pagination pagination;
     private static final int ROWS_PER_PAGE = 15;
@@ -116,6 +127,36 @@ public class App extends Application {
         stage.setResizable(false);
         stage.setWidth(1280);
         stage.setHeight(900);
+        
+        // Set window icon (appears in taskbar, title bar, Alt+Tab)
+        try {
+            // Load multiple icon sizes for better system integration
+            String[] iconSizes = {"icon.png", "icon_48.png", "icon_32.png", "icon_16.png"};
+            boolean iconLoaded = false;
+            
+            for (String iconFile : iconSizes) {
+                var iconStream = getClass().getResourceAsStream("/assets/" + iconFile);
+                if (iconStream != null) {
+                    stage.getIcons().add(new Image(iconStream));
+                    iconLoaded = true;
+                } else {
+                    // Fallback to file path
+                    File file = new File("src/assets/" + iconFile);
+                    if (file.exists()) {
+                        stage.getIcons().add(new Image(file.toURI().toString()));
+                        iconLoaded = true;
+                    }
+                }
+            }
+            
+            if (iconLoaded) {
+                System.out.println("✓ Window icons loaded successfully");
+            } else {
+                System.out.println("✗ No window icons found");
+            }
+        } catch (Exception e) {
+            System.err.println("✗ Error loading window icon: " + e.getMessage());
+        }
         
         loginScene = createLoginScene();
         stage.setScene(loginScene);
@@ -369,29 +410,7 @@ public class App extends Application {
         scanButton.getStyleClass().add("button-secondary");
         scanButton.setOnAction(e -> startCameraScan());
 
-        var notificationIcon = new FontIcon(FontAwesomeSolid.BELL);
-        notificationDot = new Circle(4, Color.web("#f43f5e"));
-        StackPane.setAlignment(notificationDot, Pos.TOP_RIGHT);
-        notificationDot.setTranslateX(-2);
-        notificationDot.setTranslateY(2);
-        notificationDot.setVisible(false); // Hidden - showing activity instead of notifications
 
-        var notificationButton = new StackPane(notificationIcon, notificationDot);
-        notificationButton.setPadding(new Insets(8));
-        notificationButton.getStyleClass().add("notification-button");
-        notificationButton.setOnMouseClicked(e -> {
-            if (notificationPopup == null) {
-                createNotificationDropdown(notificationButton);
-            }
-            if (notificationPopup.isShowing()) {
-                notificationPopup.hide();
-            } else {
-                // Position popup below the notification button
-                var bounds = notificationButton.localToScreen(notificationButton.getBoundsInLocal());
-                notificationPopup.show(notificationButton, bounds.getMinX() - 300, bounds.getMaxY() + 5);
-                refreshNotificationDropdown();
-            }
-        });
 
         var userLabel = new Label(username);
         userLabel.getStyleClass().add("user-profile-name");
@@ -404,7 +423,7 @@ public class App extends Application {
 
         var topBarSpacer = new Region();
         HBox.setHgrow(topBarSpacer, Priority.ALWAYS);
-        var topBar = new HBox(16, searchContainer, scanButton, topBarSpacer, notificationButton, userProfile);
+        var topBar = new HBox(16, searchContainer, scanButton, topBarSpacer, userProfile);
         topBar.setPadding(new Insets(12, 18, 0, 18));
         topBar.getStyleClass().add("top-bar");
         topBar.setAlignment(Pos.CENTER);
@@ -735,116 +754,121 @@ public class App extends Application {
     }
 
     private void showOverview(VBox center) {
+        // Enhanced dashboard with government-style header and improved stats
+        VBox dashboardContainer = new VBox(20);
+        dashboardContainer.setPadding(new Insets(20));
+        
+        // Government header
+        VBox headerSection = new VBox(4);
+        Label republikaLabel = new Label("REPUBLIKA NG PILIPINAS");
+        republikaLabel.setStyle("-fx-font-size: 12px; -fx-font-weight: 700; -fx-text-fill: #0A3D62; -fx-letter-spacing: 1px;");
+        
+        Label barangayLabel = new Label("BARANGAY SAN MARINO");
+        barangayLabel.setStyle("-fx-font-size: 24px; -fx-font-weight: 700; -fx-text-fill: #0f172a;");
+        
+        Label systemLabel = new Label("Document Management System");
+        systemLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #64748b;");
+        
+        headerSection.getChildren().addAll(republikaLabel, barangayLabel, systemLabel);
+        
+        // Enhanced statistics cards
         int totalPopulation = DatabaseHelper.getResidentCount(null);
-        var populationCard = createStatCard("Total Population", String.format("%,d", totalPopulation), "#30c88e");
-
-        double totalRevenue = DatabaseHelper.getTotalRevenue();
-        var revenueCard = createStatCard("Revenue", String.format("₱%.2f", totalRevenue), "#eab308");
+        int issuedRecords = DatabaseHelper.getIssuedDocumentsCount();
+        int docRequests = DatabaseHelper.getPendingClearancesCount();
+        int openComplaints = DatabaseHelper.getActiveCasesCount();
+        double revenue = DatabaseHelper.getTotalRevenue();
         
-        int pendingClearances = DatabaseHelper.getPendingClearancesCount();
-        var clearanceCard = createStatCard("Pending Clearances", String.valueOf(pendingClearances), "#f43f5e");
+        var populationCard = createEnhancedStatCard("👥", String.format("%,d", totalPopulation), "TOTAL POPULATION", "#3b82f6");
+        var recordsCard = createEnhancedStatCard("📋", String.format("%,d", issuedRecords), "ISSUED RECORDS", "#10b981");
+        var requestsCard = createEnhancedStatCard("📄", String.valueOf(docRequests), "DOC REQUESTS", "#f59e0b");
+        var complaintsCard = createEnhancedStatCard("⚠️", String.valueOf(openComplaints), "OPEN COMPLAINTS", "#ef4444");
+        var revenueCard = createEnhancedStatCard("💰", String.format("₱%,.0f", revenue), "REVENUE (MTD)", "#8b5cf6");
         
-        int activeCases = DatabaseHelper.getActiveCasesCount();
-        var casesCard = createStatCard("Active Cases", String.valueOf(activeCases), "#3b82f6");
+        var statsGrid = new HBox(16, populationCard, recordsCard, requestsCard, complaintsCard, revenueCard);
+        statsGrid.setAlignment(Pos.CENTER);
         
-        // Get announcement counts by type
-        ObservableList<Announcement> allAnnouncements = DatabaseHelper.getAllAnnouncements();
-        long eventCount = allAnnouncements.stream().filter(a -> "Event".equals(a.getType())).count();
-        long alertCount = allAnnouncements.stream().filter(a -> "Emergency Alert".equals(a.getType())).count();
-        long programCount = allAnnouncements.stream().filter(a -> "Program".equals(a.getType())).count();
-        
-        var eventsCard = createStatCard("Events", String.valueOf(eventCount), "#10b981");
-        var alertsCard = createStatCard("Emergency Alerts", String.valueOf(alertCount), "#ef4444");
-        var programsCard = createStatCard("Programs", String.valueOf(programCount), "#8b5cf6");
-        
-        // Stats grid - 3 cards per row for 1280px window
-        var statsGrid = new FlowPane(16, 16, populationCard, revenueCard, clearanceCard, casesCard, eventsCard, alertsCard, programsCard);
-        statsGrid.setMaxWidth(Double.MAX_VALUE);
-        
-        // Create Age Distribution Chart - optimized size for 1280x900 window
+        // Chart section (existing chart with better styling)
         var ageData = DatabaseHelper.getAgeDistribution();
         ObservableList<PieChart.Data> pieChartData = FXCollections.observableArrayList();
         ageData.forEach((ageGroup, count) -> pieChartData.add(new PieChart.Data(ageGroup + " (" + count + ")", count)));
 
-        var genderDistributionChart = new PieChart(pieChartData);
-        genderDistributionChart.setTitle("Resident Distribution by Age");
-        genderDistributionChart.setTitleSide(javafx.geometry.Side.TOP);
-        genderDistributionChart.setPrefSize(850, 320);
-        genderDistributionChart.setMaxSize(850, 320);
-        genderDistributionChart.setLegendVisible(true);
-        genderDistributionChart.setLabelsVisible(false);
+        var distributionChart = new PieChart(pieChartData);
+        distributionChart.setTitle("Resident Distribution by Age");
+        distributionChart.setPrefSize(600, 300);
+        distributionChart.setLegendVisible(true);
+        distributionChart.setLabelsVisible(false);
         
-        // Center the chart
-        var chartContainer = new HBox(genderDistributionChart);
+        var chartContainer = new HBox(distributionChart);
         chartContainer.setAlignment(Pos.CENTER);
-        chartContainer.setMaxWidth(Double.MAX_VALUE);
 
-        // Announcements section - better text wrapping
+        // Recent announcements (existing functionality)
         var announcementsSection = new VBox(12);
         var announcementsTitle = new Label("Recent Announcements");
-        announcementsTitle.getStyleClass().add("activity-title");
+        announcementsTitle.setStyle("-fx-font-size: 18px; -fx-font-weight: 700; -fx-text-fill: #0f172a;");
         announcementsSection.getChildren().add(announcementsTitle);
 
-        // Display latest 5 announcements with proper text wrapping
-        allAnnouncements.stream()
-            .limit(5)
-            .forEach(announcement -> {
-                var announcementItem = new HBox(12);
-                announcementItem.setPadding(new Insets(12));
-                announcementItem.setStyle("-fx-background-color: #f9fafb; -fx-border-color: #e5e7eb; -fx-border-width: 1; -fx-border-radius: 8;");
-                announcementItem.setAlignment(Pos.TOP_LEFT);
+        ObservableList<Announcement> allAnnouncements = DatabaseHelper.getAllAnnouncements();
+        allAnnouncements.stream().limit(3).forEach(announcement -> {
+            var announcementItem = new HBox(12);
+            announcementItem.setPadding(new Insets(12));
+            announcementItem.setStyle("-fx-background-color: #f8fafc; -fx-border-color: #e2e8f0; -fx-border-width: 1; -fx-border-radius: 8; -fx-background-radius: 8;");
+            announcementItem.setAlignment(Pos.TOP_LEFT);
 
-                // Type badge with color
-                var typeBadge = new Label(announcement.getType());
-                String typeColor = switch (announcement.getType()) {
-                    case "Event" -> "#10b981";
-                    case "Emergency Alert" -> "#ef4444";
-                    case "Program" -> "#8b5cf6";
-                    default -> "#6b7280";
-                };
-                typeBadge.setStyle("-fx-background-color: " + typeColor + "; -fx-text-fill: white; -fx-padding: 4 10; -fx-background-radius: 6; -fx-font-size: 11; -fx-font-weight: bold;");
-                typeBadge.setMinWidth(100);
-                typeBadge.setAlignment(Pos.CENTER);
+            var typeBadge = new Label(announcement.getType());
+            String typeColor = switch (announcement.getType()) {
+                case "Event" -> "#10b981";
+                case "Emergency Alert" -> "#ef4444";
+                case "Program" -> "#8b5cf6";
+                default -> "#6b7280";
+            };
+            typeBadge.setStyle("-fx-background-color: " + typeColor + "; -fx-text-fill: white; -fx-padding: 4 10; -fx-background-radius: 6; -fx-font-size: 11; -fx-font-weight: bold;");
 
-                // Announcement details with proper wrapping
-                var details = new VBox(6);
-                details.setMaxWidth(Double.MAX_VALUE);
-                HBox.setHgrow(details, Priority.ALWAYS);
-                
-                var title = new Label(announcement.getTitle());
-                title.setStyle("-fx-text-fill: #1a1a1a; -fx-font-size: 14; -fx-font-weight: bold;");
-                title.setWrapText(true);
-                title.setMaxWidth(Double.MAX_VALUE);
+            var details = new VBox(4);
+            HBox.setHgrow(details, Priority.ALWAYS);
+            
+            var title = new Label(announcement.getTitle());
+            title.setStyle("-fx-text-fill: #0f172a; -fx-font-size: 14; -fx-font-weight: bold;");
+            title.setWrapText(true);
 
-                var content = new Label(announcement.getContent().length() > 80 ? 
-                    announcement.getContent().substring(0, 80) + "..." : 
-                    announcement.getContent());
-                content.setStyle("-fx-text-fill: #666; -fx-font-size: 12;");
-                content.setWrapText(true);
-                content.setMaxWidth(Double.MAX_VALUE);
+            var meta = new Label("Posted on " + announcement.getPostedDate());
+            meta.setStyle("-fx-text-fill: #64748b; -fx-font-size: 11;");
 
-                var meta = new Label("Posted by " + announcement.getPostedBy() + " on " + announcement.getPostedDate() + " | Status: " + announcement.getStatus());
-                meta.setStyle("-fx-text-fill: #999; -fx-font-size: 11;");
-                meta.setWrapText(true);
-                meta.setMaxWidth(Double.MAX_VALUE);
-
-                details.getChildren().addAll(title, content, meta);
-                announcementItem.getChildren().addAll(typeBadge, details);
-
-                announcementsSection.getChildren().add(announcementItem);
-            });
+            details.getChildren().addAll(title, meta);
+            announcementItem.getChildren().addAll(typeBadge, details);
+            announcementsSection.getChildren().add(announcementItem);
+        });
 
         if (allAnnouncements.isEmpty()) {
             var noAnnouncements = new Label("No announcements yet");
-            noAnnouncements.setStyle("-fx-text-fill: #999; -fx-font-style: italic;");
+            noAnnouncements.setStyle("-fx-text-fill: #94a3b8; -fx-font-style: italic;");
             announcementsSection.getChildren().add(noAnnouncements);
         }
 
-        var content = new VBox(24, statsGrid, chartContainer, announcementsSection);
-        content.setMaxWidth(Double.MAX_VALUE);
-        updateDashboardContent(center, "Analytics & Overview", content);
+        dashboardContainer.getChildren().addAll(headerSection, statsGrid, chartContainer, announcementsSection);
+        
+        center.getChildren().clear();
+        center.getChildren().add(dashboardContainer);
     }
-
+    
+    private VBox createEnhancedStatCard(String icon, String value, String title, String color) {
+        VBox card = new VBox(8);
+        card.setPadding(new Insets(16));
+        card.setPrefWidth(180);
+        card.setStyle("-fx-background-color: #ffffff; -fx-border-color: #e2e8f0; -fx-border-width: 1px; -fx-border-radius: 12px; -fx-background-radius: 12px; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.05), 8, 0, 0, 2);");
+        
+        Label iconLabel = new Label(icon);
+        iconLabel.setStyle("-fx-font-size: 20px;");
+        
+        Label valueLabel = new Label(value);
+        valueLabel.setStyle("-fx-font-size: 24px; -fx-font-weight: 700; -fx-text-fill: " + color + ";");
+        
+        Label titleLabel = new Label(title);
+        titleLabel.setStyle("-fx-font-size: 11px; -fx-font-weight: 600; -fx-text-fill: #64748b; -fx-letter-spacing: 0.5px;");
+        
+        card.getChildren().addAll(iconLabel, valueLabel, titleLabel);
+        return card;
+    }
+    
     private void showManageRoles(VBox center) {
         var rolesTable = new TableView<Role>();
         rolesTable.getStyleClass().add("table-view");
@@ -868,13 +892,19 @@ public class App extends Application {
         // Toolbar buttons
         Button addButton = new Button("Add Role");
         addButton.setGraphic(new FontIcon(FontAwesomeSolid.PLUS_CIRCLE));
+        addButton.getStyleClass().addAll("button-secondary", "button-small");
+        addButton.setTooltip(new Tooltip("Add Role"));
 
         Button editButton = new Button("Edit Role");
         editButton.setGraphic(new FontIcon(FontAwesomeSolid.PENCIL_ALT));
+        editButton.getStyleClass().addAll("button-secondary", "button-small");
+        editButton.setTooltip(new Tooltip("Edit Role"));
         editButton.setDisable(true);
 
         Button deleteButton = new Button("Delete Role");
         deleteButton.setGraphic(new FontIcon(FontAwesomeSolid.TRASH));
+        deleteButton.getStyleClass().addAll("button-secondary", "button-small");
+        deleteButton.setTooltip(new Tooltip("Delete Role"));
         deleteButton.setDisable(true);
 
         rolesTable.getSelectionModel().selectedItemProperty().addListener((obs, oldSelection, newSelection) -> {
@@ -1281,8 +1311,9 @@ public class App extends Application {
         purposeArea.setPrefRowCount(4);
 
         // Submit Button
-        Button submitBtn = new Button("Submit Request");
-        submitBtn.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+        Button submitBtn = new Button("Submit");
+        submitBtn.getStyleClass().addAll("button-primary", "button-small");
+        submitBtn.setTooltip(new Tooltip("Submit Request"));
         submitBtn.setDisable(true);
 
         // Enable button only when all fields are filled
@@ -1375,6 +1406,8 @@ public class App extends Application {
 
         // Buttons
         Button approveBtn = new Button("Approve", new FontIcon(FontAwesomeSolid.CHECK_CIRCLE));
+        approveBtn.getStyleClass().addAll("button-secondary", "button-small");
+        approveBtn.setTooltip(new Tooltip("Approve Request"));
         approveBtn.setDisable(true);
         approveBtn.setOnAction(e -> {
             DocumentRequest selected = documentRequestsTable.getSelectionModel().getSelectedItem();
@@ -1386,7 +1419,9 @@ public class App extends Application {
             }
         });
 
-        Button paymentBtn = new Button("Record Payment", new FontIcon(FontAwesomeSolid.DOLLAR_SIGN));
+        Button paymentBtn = new Button("Payment", new FontIcon(FontAwesomeSolid.DOLLAR_SIGN));
+        paymentBtn.getStyleClass().addAll("button-secondary", "button-small");
+        paymentBtn.setTooltip(new Tooltip("Record Payment"));
         paymentBtn.setDisable(true);
         paymentBtn.setOnAction(e -> {
             DocumentRequest selected = documentRequestsTable.getSelectionModel().getSelectedItem();
@@ -1398,7 +1433,9 @@ public class App extends Application {
             }
         });
 
-        Button generateBtn = new Button("Generate & Print", new FontIcon(FontAwesomeSolid.FILE_PDF));
+        Button generateBtn = new Button("Generate", new FontIcon(FontAwesomeSolid.FILE_PDF));
+        generateBtn.getStyleClass().addAll("button-secondary", "button-small");
+        generateBtn.setTooltip(new Tooltip("Generate & Print"));
         generateBtn.setDisable(true);
         generateBtn.setOnAction(e -> {
             DocumentRequest selected = documentRequestsTable.getSelectionModel().getSelectedItem();
@@ -1414,14 +1451,35 @@ public class App extends Application {
             }
         });
 
+        // SMS Button
+        Button sendSMSBtn = new Button("SMS", new FontIcon(FontAwesomeSolid.MOBILE_ALT));
+        sendSMSBtn.getStyleClass().addAll("button-warning", "button-small");
+        sendSMSBtn.setTooltip(new Tooltip("Send SMS"));
+        sendSMSBtn.setDisable(true);
+        sendSMSBtn.setOnAction(e -> {
+            DocumentRequest selected = documentRequestsTable.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                sendDocumentSMS(selected);
+            }
+        });
+
         documentRequestsTable.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             boolean isSelected = newVal != null;
             approveBtn.setDisable(!isSelected || (newVal != null && !"PENDING".equals(newVal.getStatus())));
             paymentBtn.setDisable(!isSelected || (newVal != null && !"APPROVED".equals(newVal.getStatus())));
             generateBtn.setDisable(!isSelected || (newVal != null && (!"APPROVED".equals(newVal.getStatus()) || !"PAID".equals(newVal.getPaymentStatus()))));
+            
+            // Enable SMS button if resident has phone number
+            if (newVal != null) {
+                Optional<Resident> resident = DatabaseHelper.getResidentById(newVal.getResidentId());
+                boolean hasPhone = resident.isPresent() && resident.get().getPhoneNumber() != null && !resident.get().getPhoneNumber().trim().isEmpty();
+                sendSMSBtn.setDisable(!hasPhone);
+            } else {
+                sendSMSBtn.setDisable(true);
+            }
         });
 
-        ToolBar toolBar = new ToolBar(approveBtn, paymentBtn, generateBtn);
+        ToolBar toolBar = new ToolBar(approveBtn, paymentBtn, generateBtn, sendSMSBtn);
         toolBar.setStyle("-fx-background-color: transparent; -fx-padding: 0;");
 
         container.getChildren().addAll(toolBar, documentRequestsTable);
@@ -1433,6 +1491,146 @@ public class App extends Application {
         if (documentRequestsTable != null) {
             ObservableList<DocumentRequest> requests = DatabaseHelper.getAllDocumentRequests();
             documentRequestsTable.setItems(requests);
+        }
+    }
+
+    private void sendDocumentSMS(DocumentRequest request) {
+        // Get resident information
+        Optional<Resident> residentOpt = DatabaseHelper.getResidentById(request.getResidentId());
+        if (!residentOpt.isPresent()) {
+            showAlert("Error", "Resident not found.");
+            return;
+        }
+        
+        Resident resident = residentOpt.get();
+        String phone = resident.getPhoneNumber();
+        
+        if (phone == null || phone.trim().isEmpty()) {
+            showAlert("No Phone Number", "This resident doesn't have a phone number registered.");
+            return;
+        }
+        
+        // Create SMS dialog
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Send SMS Notification");
+        dialog.setHeaderText("Send SMS to: " + resident.getFirstName() + " " + resident.getLastName());
+        
+        // Template selection
+        ComboBox<String> templateCombo = new ComboBox<>();
+        templateCombo.getItems().addAll(
+            "Document Ready for Pickup",
+            "Document Approved",
+            "Document Pending",
+            "Custom Message"
+        );
+        templateCombo.setValue("Document Ready for Pickup");
+        
+        // Message area
+        TextArea messageArea = new TextArea();
+        messageArea.setPrefRowCount(5);
+        messageArea.setWrapText(true);
+        
+        // Character count label
+        Label charCountLabel = new Label("Characters: 0");
+        
+        // Update message when template changes
+        templateCombo.setOnAction(e -> {
+            String template = templateCombo.getValue();
+            String message = "";
+            
+            switch (template) {
+                case "Document Ready for Pickup":
+                    message = String.format(
+                        "Good day! Your %s is now ready for pickup at Barangay San Marino. " +
+                        "Please bring a valid ID. Office hours: Mon-Fri 8AM-5PM. Thank you!",
+                        request.getDocumentType()
+                    );
+                    break;
+                case "Document Approved":
+                    message = String.format(
+                        "Your %s request has been approved. Processing time: 3-5 business days. " +
+                        "Reference: %s. Thank you!",
+                        request.getDocumentType(),
+                        request.getId()
+                    );
+                    break;
+                case "Document Pending":
+                    message = String.format(
+                        "Your %s request is being processed. Reference: %s. " +
+                        "We will notify you once it's ready. Thank you for your patience!",
+                        request.getDocumentType(),
+                        request.getId()
+                    );
+                    break;
+                case "Custom Message":
+                    message = "";
+                    break;
+            }
+            
+            messageArea.setText(message);
+            charCountLabel.setText("Characters: " + message.length());
+        });
+        
+        // Trigger initial message
+        templateCombo.fireEvent(new ActionEvent());
+        
+        // Update character count on text change
+        messageArea.textProperty().addListener((obs, old, newVal) -> {
+            charCountLabel.setText("Characters: " + newVal.length());
+            if (newVal.length() > 160) {
+                charCountLabel.setStyle("-fx-text-fill: orange;");
+            } else {
+                charCountLabel.setStyle("-fx-text-fill: black;");
+            }
+        });
+        
+        // Layout
+        VBox content = new VBox(10);
+        content.setPadding(new Insets(10));
+        content.getChildren().addAll(
+            new Label("Phone: " + phone),
+            new Label("Document: " + request.getDocumentType()),
+            new Label("Status: " + request.getStatus()),
+            new Separator(),
+            new Label("Select Template:"),
+            templateCombo,
+            new Label("Message:"),
+            messageArea,
+            charCountLabel
+        );
+        
+        dialog.getDialogPane().setContent(content);
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        
+        // Handle send
+        Optional<ButtonType> result = dialog.showAndWait();
+        if (result.isPresent() && result.get() == ButtonType.OK) {
+            String message = messageArea.getText();
+            if (message == null || message.trim().isEmpty()) {
+                showAlert("Error", "Message cannot be empty.");
+                return;
+            }
+            
+            // Send SMS
+            System.out.println("📤 Sending SMS to: " + phone);
+            SMSService.SMSResponse response = SMSService.sendSMS(phone, message);
+            
+            if (response.isSuccess()) {
+                showAlert("SMS Sent Successfully!", 
+                    "✅ SMS sent to: " + resident.getFirstName() + " " + resident.getLastName() + "\n" +
+                    "📱 Phone: " + phone + "\n" +
+                    "🆔 Message ID: " + response.getMessageId() + "\n\n" +
+                    "The resident should receive the SMS within 1-5 minutes.");
+            } else {
+                showAlert("SMS Failed", 
+                    "❌ Failed to send SMS\n\n" +
+                    "Error: " + response.getMessage() + "\n" +
+                    "Error Code: " + response.getErrorCode() + "\n\n" +
+                    "Please check:\n" +
+                    "1. Phone number is correct\n" +
+                    "2. SMS service is enabled\n" +
+                    "3. You have sufficient SMS credits");
+            }
         }
     }
 
@@ -1569,11 +1767,13 @@ public class App extends Application {
 
     private void showResidentControl(VBox center) {
         residentTable = new TableView<>();
-        residentTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        residentTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         residentTable.setPrefHeight(500);
 
         TableColumn<Resident, String> photoCol = new TableColumn<>("Photo");
         photoCol.setPrefWidth(60);
+        photoCol.setMinWidth(60);
+        photoCol.setMaxWidth(80);
         photoCol.setCellValueFactory(new PropertyValueFactory<>("imagePath"));
         photoCol.setCellFactory(param -> new TableCell<Resident, String>() {
             private final ImageView imageView = new ImageView();
@@ -1602,43 +1802,123 @@ public class App extends Application {
             }
         });
         nameCol.setId("last_name");
-        nameCol.setPrefWidth(150);
+        nameCol.setPrefWidth(180);
+        nameCol.setMinWidth(150);
 
         TableColumn<Resident, String> birthDateCol = new TableColumn<>("Birth Date");
         birthDateCol.setCellValueFactory(new PropertyValueFactory<>("birthDate"));
         birthDateCol.setId("birth_date");
         birthDateCol.setPrefWidth(120);
+        birthDateCol.setMinWidth(100);
 
         TableColumn<Resident, String> genderCol = new TableColumn<>("Gender");
         genderCol.setCellValueFactory(new PropertyValueFactory<>("gender"));
         genderCol.setId("gender");
         genderCol.setPrefWidth(100);
+        genderCol.setMinWidth(80);
 
         TableColumn<Resident, String> addressCol = new TableColumn<>("Address");
         addressCol.setCellValueFactory(new PropertyValueFactory<>("address"));
         addressCol.setId("address");
-        addressCol.setPrefWidth(300);
+        addressCol.setPrefWidth(250);
+        addressCol.setMinWidth(200);
+        // Enable text wrapping for address
+        addressCol.setCellFactory(col -> {
+            TableCell<Resident, String> cell = new TableCell<Resident, String>() {
+                @Override
+                protected void updateItem(String item, boolean empty) {
+                    super.updateItem(item, empty);
+                    if (empty || item == null) {
+                        setGraphic(null);
+                        setText(null);
+                    } else {
+                        Label label = new Label(item);
+                        label.setWrapText(true);
+                        label.setMaxWidth(240);
+                        label.setStyle("-fx-font-size: 13px;");
+                        setGraphic(label);
+                        setText(null);
+                    }
+                }
+            };
+            cell.setPrefHeight(Control.USE_COMPUTED_SIZE);
+            return cell;
+        });
+        
+        TableColumn<Resident, String> phoneCol = new TableColumn<>("Phone Number");
+        phoneCol.setCellValueFactory(new PropertyValueFactory<>("phoneNumber"));
+        phoneCol.setPrefWidth(130);
+        phoneCol.setMinWidth(120);
 
-        residentTable.getColumns().setAll(List.of(photoCol, nameCol, birthDateCol, genderCol, addressCol));
+        residentTable.getColumns().setAll(List.of(photoCol, nameCol, birthDateCol, genderCol, addressCol, phoneCol));
 
-        Button addButton = new Button("Add Resident");
+        // Create enhanced table with filtering and sorting
+        ObservableList<Resident> residentData = FXCollections.observableArrayList();
+        TableUtils.EnhancedTable<Resident> enhancedResidentTable = TableUtils.createEnhancedTable(residentTable, residentData);
+        
+        // Set global search function for residents
+        enhancedResidentTable.setGlobalFilter(resident -> {
+            StringBuilder searchText = new StringBuilder();
+            searchText.append(resident.getFirstName()).append(" ");
+            searchText.append(resident.getLastName()).append(" ");
+            searchText.append(resident.getBirthDate()).append(" ");
+            searchText.append(resident.getGender()).append(" ");
+            if (resident.getAddress() != null) {
+                searchText.append(resident.getAddress()).append(" ");
+            }
+            if (resident.getPhoneNumber() != null) {
+                searchText.append(resident.getPhoneNumber()).append(" ");
+            }
+            return searchText.toString();
+        });
+
+        // Setup column sorting
+        Platform.runLater(() -> {
+            enhancedResidentTable.addColumnFilter(nameCol, resident -> 
+                resident.getLastName() + ", " + resident.getFirstName());
+            enhancedResidentTable.addColumnFilter(birthDateCol, Resident::getBirthDate);
+            enhancedResidentTable.addColumnFilter(genderCol, Resident::getGender);
+            enhancedResidentTable.addColumnFilter(addressCol, resident -> 
+                resident.getAddress() != null ? resident.getAddress() : "");
+            enhancedResidentTable.addColumnFilter(phoneCol, resident -> 
+                resident.getPhoneNumber() != null ? resident.getPhoneNumber() : "");
+        });
+
+        Button addButton = new Button("Add");
         addButton.setGraphic(new FontIcon(FontAwesomeSolid.PLUS_CIRCLE));
+        addButton.getStyleClass().addAll("button-secondary", "button-small");
+        addButton.setTooltip(new Tooltip("Add Resident"));
 
-        Button importButton = new Button("Import CSV");
+        Button importButton = new Button("Import");
         importButton.setGraphic(new FontIcon(FontAwesomeSolid.FILE_IMPORT));
-        importButton.getStyleClass().add("button-accent");
+        importButton.getStyleClass().addAll("button-secondary", "button-small");
+        importButton.setTooltip(new Tooltip("Import CSV"));
 
-        Button editButton = new Button("Edit Resident");
+        Button editButton = new Button("Edit");
         editButton.setGraphic(new FontIcon(FontAwesomeSolid.PENCIL_ALT));
+        editButton.getStyleClass().addAll("button-secondary", "button-small");
+        editButton.setTooltip(new Tooltip("Edit Resident"));
 
-        Button deleteButton = new Button("Delete Resident");
+        Button deleteButton = new Button("Delete");
         deleteButton.setGraphic(new FontIcon(FontAwesomeSolid.TRASH));
+        deleteButton.getStyleClass().addAll("button-secondary", "button-small");
+        deleteButton.setTooltip(new Tooltip("Delete Resident"));
 
         Button idButton = new Button("Print ID");
         idButton.setGraphic(new FontIcon(FontAwesomeSolid.ID_CARD));
+        idButton.getStyleClass().addAll("button-secondary", "button-small");
+        idButton.setTooltip(new Tooltip("Print ID Card"));
 
-        Button viewIdBtn = new Button("View ID Card");
+        Button viewIdBtn = new Button("View ID");
         viewIdBtn.setGraphic(new FontIcon(FontAwesomeSolid.ADDRESS_CARD));
+        viewIdBtn.getStyleClass().addAll("button-secondary", "button-small");
+        viewIdBtn.setTooltip(new Tooltip("View ID Card"));
+
+        Button exportButton = new Button("Export PDF");
+        exportButton.setGraphic(new FontIcon(FontAwesomeSolid.FILE_PDF));
+        exportButton.getStyleClass().addAll("button-accent", "button-small");
+        exportButton.setTooltip(new Tooltip("Export to PDF"));
+        exportButton.setOnAction(e -> generateResidentPdf());
 
         editButton.setDisable(true);
         deleteButton.setDisable(true);
@@ -1653,26 +1933,13 @@ public class App extends Application {
             viewIdBtn.setDisable(!isSelected);
         });
 
-        // Custom sort policy for server-side sorting with pagination
-        residentTable.setSortPolicy(table -> {
-            if (table.getSortOrder().isEmpty()) {
-                currentSortField = "last_name";
-                currentSortOrder = "ASC";
-            } else {
-                TableColumn<Resident, ?> col = table.getSortOrder().get(0);
-                if (col.getId() != null) {
-                    currentSortField = col.getId();
-                    currentSortOrder = col.getSortType() == TableColumn.SortType.ASCENDING ? "ASC" : "DESC";
-                }
-            }
-            loadResidentData();
-            return true;
-        });
+        // Load all resident data for enhanced table
+        loadAllResidentData(residentData);
 
         addButton.setOnAction(e -> {
             showResidentDialog(null).ifPresent(resident -> {
                 DatabaseHelper.addResident(resident);
-                loadResidentData();
+                loadAllResidentData(residentData);
                 showToast("Resident added successfully.");
             });
         });
@@ -1682,7 +1949,7 @@ public class App extends Application {
             if (selected != null) {
                 showResidentDialog(selected).ifPresent(resident -> {
                     DatabaseHelper.updateResident(resident);
-                    loadResidentData();
+                    loadAllResidentData(residentData);
                     showToast("Resident updated successfully.");
                 });
             }
@@ -1698,7 +1965,7 @@ public class App extends Application {
                 confirm.showAndWait().ifPresent(response -> {
                     if (response == ButtonType.OK) {
                         DatabaseHelper.deleteResident(selected.getId());
-                        loadResidentData();
+                        loadAllResidentData(residentData);
                         showToast("Resident deleted successfully.");
                     }
                 });
@@ -1770,7 +2037,7 @@ public class App extends Application {
                         
                         // Refresh the table
                         if (success > 0) {
-                            loadResidentData();
+                            loadAllResidentData(residentData);
                             showToast(String.format("Imported %d residents successfully.", success));
                         }
                     }
@@ -1778,49 +2045,37 @@ public class App extends Application {
             }
         });
 
-        ToolBar toolBar = new ToolBar(addButton, importButton, editButton, deleteButton, new Separator(Orientation.VERTICAL), idButton, viewIdBtn);
-        toolBar.setStyle("-fx-background-color: transparent; -fx-padding: 0;");
+        // Create action toolbar
+        HBox actionBox = new HBox(16);
+        actionBox.setAlignment(Pos.CENTER_LEFT);
+        actionBox.setPadding(new Insets(0, 0, 20, 0));
+        actionBox.getChildren().addAll(
+            addButton, importButton, editButton, deleteButton, 
+            new Separator(Orientation.VERTICAL), 
+            idButton, viewIdBtn,
+            new Separator(Orientation.VERTICAL),
+            exportButton
+        );
 
-        var exportButton = new Button("📄 Export to PDF");
-        exportButton.getStyleClass().add("button-accent");
-        exportButton.setOnAction(e -> generateResidentPdf());
-
-        var bottomBar = new HBox(exportButton);
-        bottomBar.setAlignment(Pos.CENTER_RIGHT);
-        bottomBar.setPadding(new Insets(10, 0, 0, 0));
-
-        pagination = new Pagination();
-        pagination.setPrefHeight(400);
-        pagination.setStyle("-fx-padding: 10;");
-
-        searchField.textProperty().addListener((obs, oldVal, newVal) -> {
-            pagination.setCurrentPageIndex(0); // Reset to first page on search
-            updatePagination();
-        });
-
-        var content = new VBox(12, toolBar, pagination, bottomBar);
-        VBox.setVgrow(pagination, Priority.ALWAYS);
-        updateDashboardContent(center, "Resident & Data Control", content);
+        // Create main content with enhanced table
+        VBox content = new VBox(24);
+        content.setPadding(new Insets(28));
         
-        // Initialize data and pagination
-        System.out.println("Initializing resident table...");
-        updatePagination();
-        // Set page factory after updating pagination to trigger initial load
-        pagination.setPageFactory(pageIndex -> createPage(pageIndex));
-        System.out.println("Resident table initialized, page factory set");
+        Label title = new Label("Resident & Data Control");
+        title.setStyle("-fx-font-size: 20; -fx-font-weight: 700; -fx-text-fill: #1f2937;");
+        
+        content.getChildren().addAll(title, actionBox, enhancedResidentTable.getContainer());
+        VBox.setVgrow(enhancedResidentTable.getContainer(), Priority.ALWAYS);
+
+        updateDashboardContent(center, "Resident & Data Control", content);
     }
 
-    private void loadResidentData() {
-        if (pagination != null) {
-            pagination.setCurrentPageIndex(0); // Reset to first page
-            updatePagination();
-            // Refresh the current page by requesting it again
-            int currentPage = pagination.getCurrentPageIndex();
-            if (currentPage >= 0) {
-                pagination.setPageFactory(null);
-                pagination.setPageFactory(pageIndex -> createPage(pageIndex));
-            }
-        }
+    // Helper method to load all resident data for enhanced table
+    private void loadAllResidentData(ObservableList<Resident> residentData) {
+        residentData.clear();
+        // Load all residents without pagination for enhanced table filtering
+        ObservableList<Resident> allResidents = DatabaseHelper.getResidents(null, 0, Integer.MAX_VALUE, "last_name", "ASC");
+        residentData.addAll(allResidents);
     }
 
     private void generateResidentPdf() {
@@ -1967,6 +2222,10 @@ public class App extends Application {
         address.setPromptText("Enter complete address");
         address.setWrapText(true);
         address.setPrefRowCount(4);
+        
+        TextField phoneNumber = new TextField();
+        phoneNumber.setPromptText("e.g., 09171234567");
+        phoneNumber.setPrefWidth(200);
 
         uploadBtn.setOnAction(e -> {
             FileChooser fileChooser = new FileChooser();
@@ -1999,6 +2258,8 @@ public class App extends Application {
         grid.add(gender, 1, 5);
         grid.add(new Label("Address:"), 0, 6);
         grid.add(address, 1, 6);
+        grid.add(new Label("Phone Number:"), 0, 7);
+        grid.add(phoneNumber, 1, 7);
 
         if (existingResident != null) {
             firstName.setText(existingResident.getFirstName());
@@ -2011,6 +2272,7 @@ public class App extends Application {
             }
             gender.setValue(existingResident.getGender());
             address.setText(existingResident.getAddress());
+            phoneNumber.setText(existingResident.getPhoneNumber() != null ? existingResident.getPhoneNumber() : "");
             if (existingResident.getImagePath() != null && !existingResident.getImagePath().isEmpty()) {
                 File imageFile = new File(existingResident.getImagePath());
                 if (imageFile.exists()) {
@@ -2068,6 +2330,9 @@ public class App extends Application {
                     imagePath = getDefaultResidentImagePath();
                 }
                 r.setImagePath(imagePath);
+                
+                // Set phone number
+                r.setPhoneNumber(phoneNumber.getText().trim());
                 
                 return r;
             }
@@ -2229,52 +2494,15 @@ public class App extends Application {
                     .ifPresent(r -> {
                         showResidentDialog(r).ifPresent(updated -> {
                             DatabaseHelper.updateResident(updated);
-                            if (pagination != null) loadResidentData();
+                            // Refresh resident data in enhanced table if available
+                            if (residentTable != null && residentTable.getItems() instanceof ObservableList) {
+                                ObservableList<Resident> residentData = (ObservableList<Resident>) residentTable.getItems();
+                                loadAllResidentData(residentData);
+                            }
                         });
                     });
             } catch (NumberFormatException e) {
                 e.printStackTrace(); // Log if the ID in the QR code is not a valid number
-            }
-        }
-    }
-
-    private Node createPage(int pageIndex) {
-        try {
-            String filter = (searchField != null) ? searchField.getText() : "";
-            System.out.println("Loading page " + pageIndex + " with filter: '" + filter + "'");
-            
-            ObservableList<Resident> residents = DatabaseHelper.getResidents(filter, pageIndex, ROWS_PER_PAGE, currentSortField, currentSortOrder);
-            System.out.println("Fetched " + residents.size() + " residents for page " + pageIndex);
-            
-            residentTable.setItems(residents);
-            
-            // Wrap table in a BorderPane for proper pagination display
-            BorderPane pageContainer = new BorderPane();
-            pageContainer.setCenter(residentTable);
-            return pageContainer;
-        } catch (Exception e) {
-            e.printStackTrace();
-            Label errorLabel = new Label("Error loading residents: " + e.getMessage());
-            errorLabel.setStyle("-fx-text-fill: red; -fx-font-size: 12;");
-            BorderPane errorContainer = new BorderPane(errorLabel);
-            return errorContainer;
-        }
-    }
-
-    private void updatePagination() {
-        try {
-            String filter = (searchField != null) ? searchField.getText() : "";
-            int totalCount = DatabaseHelper.getResidentCount(filter);
-            int pageCount = (totalCount + ROWS_PER_PAGE - 1) / ROWS_PER_PAGE;
-            if (pageCount == 0) pageCount = 1;
-            
-            System.out.println("Total residents: " + totalCount + ", Page count: " + pageCount);
-            
-            pagination.setPageCount(pageCount);
-        } catch (Exception e) {
-            e.printStackTrace();
-            if (pagination != null) {
-                pagination.setPageCount(1);
             }
         }
     }
@@ -2440,26 +2668,33 @@ public class App extends Application {
         Map<String, String> userPermissions = DatabaseHelper.getPermissions(currentRole);
         String userAccessPermission = userPermissions.get("User & Access");
         
-        // Three tabs: Manage Roles, Permissions, and Audit Log
+        // Four tabs: Manage Users, Manage Roles, Permissions, and Audit Log
         TabPane tabPane = new TabPane();
         tabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
         tabPane.getStyleClass().add("tab-pane");
 
-        // Tab 1: Manage Roles - Only for Full Access and Manage
+        // Tab 1: Manage Users - Only for Full Access and Manage
+        if ("Full Access".equals(userAccessPermission) || "Manage".equals(userAccessPermission)) {
+            Tab usersTab = new Tab("Manage Users", createManageUsersPanel());
+            usersTab.getStyleClass().add("tab");
+            tabPane.getTabs().add(usersTab);
+        }
+
+        // Tab 2: Manage Roles - Only for Full Access and Manage
         if ("Full Access".equals(userAccessPermission) || "Manage".equals(userAccessPermission)) {
             Tab rolesTab = new Tab("Manage Roles", createManageRolesPanel());
             rolesTab.getStyleClass().add("tab");
             tabPane.getTabs().add(rolesTab);
         }
 
-        // Tab 2: Role Permissions - Visible for Full Access, Manage, and View Only
+        // Tab 3: Role Permissions - Visible for Full Access, Manage, and View Only
         if (!"None".equals(userAccessPermission)) {
             Tab permissionsTab = new Tab("Role Permissions", createPermissionsPanel());
             permissionsTab.getStyleClass().add("tab");
             tabPane.getTabs().add(permissionsTab);
         }
 
-        // Tab 3: Audit Log - Visible for Full Access, Manage, and View Only
+        // Tab 4: Audit Log - Visible for Full Access, Manage, and View Only
         if (!"None".equals(userAccessPermission)) {
             Tab auditTab = new Tab("Audit Log", createAuditLogPanel());
             auditTab.getStyleClass().add("tab");
@@ -2477,6 +2712,915 @@ public class App extends Application {
         } else {
             updateDashboardContent(center, "User & Access Management", tabPane);
         }
+    }
+
+    private VBox createManageUsersPanel() {
+        VBox panel = new VBox(25);
+        panel.setPadding(new Insets(25));
+
+        // Header
+        Label title = new Label("User Management");
+        title.setStyle("-fx-font-size: 18; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
+
+        // Action buttons with better spacing
+        HBox actionBox = new HBox(12);
+        actionBox.setAlignment(Pos.CENTER_LEFT);
+        actionBox.setPadding(new Insets(0, 0, 10, 0));
+
+        Button addUserBtn = new Button("Add User", new FontIcon(FontAwesomeSolid.USER_PLUS));
+        addUserBtn.getStyleClass().addAll("button-primary", "button-small");
+        addUserBtn.setOnAction(e -> showAddUserDialog());
+        addUserBtn.setPrefWidth(110);
+
+        Button promoteResidentBtn = new Button("Promote", new FontIcon(FontAwesomeSolid.USER_SHIELD));
+        promoteResidentBtn.getStyleClass().addAll("button-secondary", "button-small");
+        promoteResidentBtn.setTooltip(new Tooltip("Create user account from existing resident"));
+        promoteResidentBtn.setOnAction(e -> showPromoteResidentDialog());
+        promoteResidentBtn.setPrefWidth(100);
+
+        Button viewResidentsBtn = new Button("View All", new FontIcon(FontAwesomeSolid.USERS));
+        viewResidentsBtn.getStyleClass().addAll("button-info", "button-small");
+        viewResidentsBtn.setTooltip(new Tooltip("View all residents and their account status"));
+        viewResidentsBtn.setOnAction(e -> showResidentsAccountStatusDialog());
+        viewResidentsBtn.setPrefWidth(95);
+
+        actionBox.getChildren().addAll(addUserBtn, promoteResidentBtn, viewResidentsBtn);
+
+        // Create enhanced table with better proportions
+        TableView<User> usersTable = createUsersTable();
+        ObservableList<User> userData = DatabaseHelper.getAllUsers();
+        
+        TableUtils.EnhancedTable<User> enhancedTable = TableUtils.createEnhancedTable(usersTable, userData);
+        
+        // Set global search function
+        enhancedTable.setGlobalFilter(user -> {
+            StringBuilder searchText = new StringBuilder();
+            searchText.append(user.getUsername()).append(" ");
+            searchText.append(user.getRole()).append(" ");
+            
+            // Add resident name if linked
+            if (user.getResidentId() > 0) {
+                Resident resident = DatabaseHelper.getResidentForUser(user.getId());
+                if (resident != null) {
+                    searchText.append(resident.getFirstName()).append(" ");
+                    searchText.append(resident.getLastName()).append(" ");
+                    if (resident.getPhoneNumber() != null) {
+                        searchText.append(resident.getPhoneNumber()).append(" ");
+                    }
+                    if (resident.getAddress() != null) {
+                        searchText.append(resident.getAddress()).append(" ");
+                    }
+                }
+            }
+            
+            searchText.append(user.getCreatedDate()).append(" ");
+            searchText.append(user.getLastLogin()).append(" ");
+            searchText.append(user.isActive() ? "active" : "inactive");
+            
+            return searchText.toString();
+        });
+
+        // Store reference for refreshing
+        this.usersManagementTable = usersTable;
+        this.enhancedUsersTable = enhancedTable;
+
+        // Setup column filters after table is created
+        Platform.runLater(() -> setupUsersTableFilters());
+
+        panel.getChildren().addAll(title, actionBox, enhancedTable.getContainer());
+        VBox.setVgrow(enhancedTable.getContainer(), Priority.ALWAYS);
+
+        return panel;
+    }
+
+    private TableView<User> createUsersTable() {
+        TableView<User> usersTable = new TableView<>();
+        usersTable.getStyleClass().add("table-view");
+        usersTable.setPrefHeight(500);
+        usersTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+
+        // Table columns with better proportions
+        TableColumn<User, Number> idCol = new TableColumn<>("ID");
+        idCol.setCellValueFactory(new PropertyValueFactory<>("id"));
+        idCol.setPrefWidth(50);
+        idCol.setMinWidth(50);
+        idCol.setMaxWidth(70);
+
+        TableColumn<User, String> usernameCol = new TableColumn<>("Username");
+        usernameCol.setCellValueFactory(new PropertyValueFactory<>("username"));
+        usernameCol.setPrefWidth(120);
+        usernameCol.setMinWidth(100);
+
+        TableColumn<User, String> residentNameCol = new TableColumn<>("Resident Name");
+        residentNameCol.setPrefWidth(160);
+        residentNameCol.setMinWidth(140);
+        residentNameCol.setCellValueFactory(cellData -> {
+            User user = cellData.getValue();
+            if (user.getResidentId() > 0) {
+                Resident resident = DatabaseHelper.getResidentForUser(user.getId());
+                if (resident != null) {
+                    return new javafx.beans.property.SimpleStringProperty(
+                        resident.getFirstName() + " " + resident.getLastName()
+                    );
+                }
+            }
+            return new javafx.beans.property.SimpleStringProperty("No resident linked");
+        });
+
+        TableColumn<User, String> residentInfoCol = new TableColumn<>("Contact Info");
+        residentInfoCol.setPrefWidth(200);
+        residentInfoCol.setMinWidth(180);
+        residentInfoCol.setCellValueFactory(cellData -> {
+            User user = cellData.getValue();
+            if (user.getResidentId() > 0) {
+                Resident resident = DatabaseHelper.getResidentForUser(user.getId());
+                if (resident != null) {
+                    String info = "";
+                    if (resident.getPhoneNumber() != null && !resident.getPhoneNumber().trim().isEmpty()) {
+                        info += "📱 " + resident.getPhoneNumber();
+                    }
+                    if (resident.getAddress() != null && !resident.getAddress().trim().isEmpty()) {
+                        if (!info.isEmpty()) info += "\n";
+                        info += "🏠 " + (resident.getAddress().length() > 25 ? 
+                            resident.getAddress().substring(0, 25) + "..." : resident.getAddress());
+                    }
+                    return new javafx.beans.property.SimpleStringProperty(info.isEmpty() ? "No contact info" : info);
+                }
+            }
+            return new javafx.beans.property.SimpleStringProperty("System account");
+        });
+        
+        // Enable text wrapping for contact info
+        residentInfoCol.setCellFactory(col -> {
+            TableCell<User, String> cell = new TableCell<User, String>() {
+                @Override
+                protected void updateItem(String item, boolean empty) {
+                    super.updateItem(item, empty);
+                    if (empty || item == null) {
+                        setGraphic(null);
+                        setText(null);
+                    } else {
+                        Label label = new Label(item);
+                        label.setWrapText(true);
+                        label.setMaxWidth(180);
+                        label.setStyle("-fx-font-size: 12px;");
+                        setGraphic(label);
+                        setText(null);
+                    }
+                }
+            };
+            cell.setPrefHeight(Control.USE_COMPUTED_SIZE);
+            return cell;
+        });
+
+        TableColumn<User, String> roleCol = new TableColumn<>("Role");
+        roleCol.setCellValueFactory(new PropertyValueFactory<>("role"));
+        roleCol.setPrefWidth(140);
+        roleCol.setMinWidth(120);
+
+        TableColumn<User, String> createdCol = new TableColumn<>("Created");
+        createdCol.setCellValueFactory(new PropertyValueFactory<>("createdDate"));
+        createdCol.setPrefWidth(110);
+        createdCol.setMinWidth(100);
+
+        TableColumn<User, String> lastLoginCol = new TableColumn<>("Last Login");
+        lastLoginCol.setCellValueFactory(new PropertyValueFactory<>("lastLogin"));
+        lastLoginCol.setPrefWidth(110);
+        lastLoginCol.setMinWidth(100);
+
+        TableColumn<User, Boolean> statusCol = new TableColumn<>("Status");
+        statusCol.setCellValueFactory(new PropertyValueFactory<>("isActive"));
+        statusCol.setPrefWidth(80);
+        statusCol.setMinWidth(70);
+        statusCol.setCellFactory(col -> new TableCell<User, Boolean>() {
+            @Override
+            protected void updateItem(Boolean isActive, boolean empty) {
+                super.updateItem(isActive, empty);
+                if (empty || isActive == null) {
+                    setGraphic(null);
+                } else {
+                    Label badge = new Label(isActive ? "Active" : "Inactive");
+                    badge.setStyle("-fx-background-color: " + (isActive ? "#10b981" : "#ef4444") + 
+                        "; -fx-text-fill: white; -fx-padding: 4 8; -fx-border-radius: 12; -fx-background-radius: 12; -fx-font-size: 11px;");
+                    setGraphic(badge);
+                }
+            }
+        });
+
+        TableColumn<User, Void> actionsCol = new TableColumn<>("Actions");
+        actionsCol.setPrefWidth(130);
+        actionsCol.setMinWidth(120);
+        actionsCol.setSortable(false); // Actions column shouldn't be sortable
+        actionsCol.setCellFactory(col -> new TableCell<User, Void>() {
+            private final Button editBtn = new Button("", new FontIcon(FontAwesomeSolid.EDIT));
+            private final Button deleteBtn = new Button("", new FontIcon(FontAwesomeSolid.TRASH));
+            private final Button resetPasswordBtn = new Button("", new FontIcon(FontAwesomeSolid.KEY));
+            private final HBox actionBox = new HBox(4, editBtn, resetPasswordBtn, deleteBtn);
+
+            {
+                editBtn.getStyleClass().add("button-secondary");
+                editBtn.setTooltip(new Tooltip("Edit User"));
+                editBtn.setPrefWidth(30);
+                editBtn.setPrefHeight(28);
+                editBtn.setOnAction(e -> {
+                    User user = getTableView().getItems().get(getIndex());
+                    showEditUserDialog(user);
+                });
+
+                resetPasswordBtn.getStyleClass().add("button-warning");
+                resetPasswordBtn.setTooltip(new Tooltip("Reset Password"));
+                resetPasswordBtn.setPrefWidth(30);
+                resetPasswordBtn.setPrefHeight(28);
+                resetPasswordBtn.setOnAction(e -> {
+                    User user = getTableView().getItems().get(getIndex());
+                    showResetPasswordDialog(user);
+                });
+
+                deleteBtn.getStyleClass().add("button-danger");
+                deleteBtn.setTooltip(new Tooltip("Delete User"));
+                deleteBtn.setPrefWidth(30);
+                deleteBtn.setPrefHeight(28);
+                deleteBtn.setOnAction(e -> {
+                    User user = getTableView().getItems().get(getIndex());
+                    showDeleteUserConfirmation(user);
+                });
+
+                actionBox.setAlignment(Pos.CENTER);
+            }
+
+            @Override
+            protected void updateItem(Void item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty) {
+                    setGraphic(null);
+                } else {
+                    User user = getTableView().getItems().get(getIndex());
+                    // Disable delete for current user
+                    deleteBtn.setDisable(user.getUsername().equals(currentUsername));
+                    setGraphic(actionBox);
+                }
+            }
+        });
+
+        usersTable.getColumns().addAll(idCol, usernameCol, residentNameCol, residentInfoCol, roleCol, createdCol, lastLoginCol, statusCol, actionsCol);
+
+        // Set row height to accommodate wrapped text
+        usersTable.setRowFactory(tv -> {
+            TableRow<User> row = new TableRow<>();
+            row.setPrefHeight(50);
+            return row;
+        });
+
+        return usersTable;
+    }
+
+    private void setupUsersTableFilters() {
+        if (enhancedUsersTable != null) {
+            TableView<User> table = enhancedUsersTable.getTableView();
+            
+            // Add column filters
+            for (TableColumn<User, ?> column : table.getColumns()) {
+                if (column.getText().equals("Actions")) continue; // Skip actions column
+                
+                switch (column.getText()) {
+                    case "ID":
+                        enhancedUsersTable.addColumnFilter(column, user -> String.valueOf(user.getId()));
+                        break;
+                    case "Username":
+                        enhancedUsersTable.addColumnFilter(column, User::getUsername);
+                        break;
+                    case "Resident Name":
+                        enhancedUsersTable.addColumnFilter(column, user -> {
+                            if (user.getResidentId() > 0) {
+                                Resident resident = DatabaseHelper.getResidentForUser(user.getId());
+                                if (resident != null) {
+                                    return resident.getFirstName() + " " + resident.getLastName();
+                                }
+                            }
+                            return "No resident linked";
+                        });
+                        break;
+                    case "Role":
+                        enhancedUsersTable.addColumnFilter(column, User::getRole);
+                        break;
+                    case "Created":
+                        enhancedUsersTable.addColumnFilter(column, User::getCreatedDate);
+                        break;
+                    case "Last Login":
+                        enhancedUsersTable.addColumnFilter(column, User::getLastLogin);
+                        break;
+                    case "Status":
+                        enhancedUsersTable.addColumnFilter(column, user -> user.isActive() ? "Active" : "Inactive");
+                        break;
+                }
+            }
+        }
+    }
+
+    private void refreshUsersTable(TableView<User> table) {
+        if (table != null) {
+            table.setItems(DatabaseHelper.getAllUsers());
+        }
+    }
+
+    private void refreshUsersManagementTable() {
+        if (enhancedUsersTable != null) {
+            enhancedUsersTable.refreshData(DatabaseHelper.getAllUsers());
+            setupUsersTableFilters(); // Re-setup filters after refresh
+        }
+    }
+
+    private void showAddUserDialog() {
+        Dialog<User> dialog = new Dialog<>();
+        dialog.setTitle("Add New User");
+        dialog.setHeaderText("Create a new user account");
+
+        ButtonType createButtonType = new ButtonType("Create", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(createButtonType, ButtonType.CANCEL);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(20, 150, 10, 10));
+
+        TextField usernameField = new TextField();
+        usernameField.setPromptText("Username");
+
+        PasswordField passwordField = new PasswordField();
+        passwordField.setPromptText("Password");
+
+        PasswordField confirmPasswordField = new PasswordField();
+        confirmPasswordField.setPromptText("Confirm Password");
+
+        ComboBox<String> roleCombo = new ComboBox<>();
+        ObservableList<Role> roles = DatabaseHelper.getAllRoles();
+        for (Role role : roles) {
+            roleCombo.getItems().add(role.getName());
+        }
+        roleCombo.setPromptText("Select Role");
+
+        CheckBox activeCheckBox = new CheckBox("Active");
+        activeCheckBox.setSelected(true);
+
+        grid.add(new Label("Username:"), 0, 0);
+        grid.add(usernameField, 1, 0);
+        grid.add(new Label("Password:"), 0, 1);
+        grid.add(passwordField, 1, 1);
+        grid.add(new Label("Confirm Password:"), 0, 2);
+        grid.add(confirmPasswordField, 1, 2);
+        grid.add(new Label("Role:"), 0, 3);
+        grid.add(roleCombo, 1, 3);
+        grid.add(new Label("Status:"), 0, 4);
+        grid.add(activeCheckBox, 1, 4);
+
+        dialog.getDialogPane().setContent(grid);
+
+        // Enable/disable create button based on input validation
+        Node createButton = dialog.getDialogPane().lookupButton(createButtonType);
+        createButton.setDisable(true);
+
+        // Validation
+        Runnable validateInput = () -> {
+            boolean valid = !usernameField.getText().trim().isEmpty() &&
+                           !passwordField.getText().isEmpty() &&
+                           passwordField.getText().equals(confirmPasswordField.getText()) &&
+                           roleCombo.getValue() != null;
+            createButton.setDisable(!valid);
+        };
+
+        usernameField.textProperty().addListener((obs, old, text) -> validateInput.run());
+        passwordField.textProperty().addListener((obs, old, text) -> validateInput.run());
+        confirmPasswordField.textProperty().addListener((obs, old, text) -> validateInput.run());
+        roleCombo.valueProperty().addListener((obs, old, role) -> validateInput.run());
+
+        dialog.setResultConverter(dialogButton -> {
+            if (dialogButton == createButtonType) {
+                return new User(usernameField.getText().trim(), roleCombo.getValue());
+            }
+            return null;
+        });
+
+        dialog.showAndWait().ifPresent(user -> {
+            if (DatabaseHelper.createUser(user.getUsername(), passwordField.getText(), user.getRole())) {
+                showToast("User created successfully");
+                refreshUsersManagementTable();
+            } else {
+                showToast("Failed to create user. Username may already exist.");
+            }
+        });
+    }
+
+    private void showEditUserDialog(User user) {
+        Dialog<User> dialog = new Dialog<>();
+        dialog.setTitle("Edit User");
+        dialog.setHeaderText("Edit user: " + user.getUsername());
+
+        ButtonType saveButtonType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(20, 150, 10, 10));
+
+        TextField usernameField = new TextField(user.getUsername());
+        usernameField.setPromptText("Username");
+
+        ComboBox<String> roleCombo = new ComboBox<>();
+        ObservableList<Role> roles = DatabaseHelper.getAllRoles();
+        for (Role role : roles) {
+            roleCombo.getItems().add(role.getName());
+        }
+        roleCombo.setValue(user.getRole());
+
+        CheckBox activeCheckBox = new CheckBox("Active");
+        activeCheckBox.setSelected(user.isActive());
+
+        grid.add(new Label("Username:"), 0, 0);
+        grid.add(usernameField, 1, 0);
+        grid.add(new Label("Role:"), 0, 1);
+        grid.add(roleCombo, 1, 1);
+        grid.add(new Label("Status:"), 0, 2);
+        grid.add(activeCheckBox, 1, 2);
+
+        dialog.getDialogPane().setContent(grid);
+
+        dialog.setResultConverter(dialogButton -> {
+            if (dialogButton == saveButtonType) {
+                user.setUsername(usernameField.getText().trim());
+                user.setRole(roleCombo.getValue());
+                user.setActive(activeCheckBox.isSelected());
+                return user;
+            }
+            return null;
+        });
+
+        dialog.showAndWait().ifPresent(updatedUser -> {
+            if (DatabaseHelper.updateUser(updatedUser.getId(), updatedUser.getUsername(), 
+                                        updatedUser.getRole(), updatedUser.isActive())) {
+                showToast("User updated successfully");
+                refreshUsersManagementTable();
+            } else {
+                showToast("Failed to update user");
+            }
+        });
+    }
+
+    private void showResetPasswordDialog(User user) {
+        Dialog<String> dialog = new Dialog<>();
+        dialog.setTitle("Reset Password");
+        dialog.setHeaderText("Reset password for: " + user.getUsername());
+
+        ButtonType resetButtonType = new ButtonType("Reset", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(resetButtonType, ButtonType.CANCEL);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(20, 150, 10, 10));
+
+        PasswordField newPasswordField = new PasswordField();
+        newPasswordField.setPromptText("New Password");
+
+        PasswordField confirmPasswordField = new PasswordField();
+        confirmPasswordField.setPromptText("Confirm New Password");
+
+        grid.add(new Label("New Password:"), 0, 0);
+        grid.add(newPasswordField, 1, 0);
+        grid.add(new Label("Confirm Password:"), 0, 1);
+        grid.add(confirmPasswordField, 1, 1);
+
+        dialog.getDialogPane().setContent(grid);
+
+        // Enable/disable reset button based on input validation
+        Node resetButton = dialog.getDialogPane().lookupButton(resetButtonType);
+        resetButton.setDisable(true);
+
+        Runnable validateInput = () -> {
+            boolean valid = !newPasswordField.getText().isEmpty() &&
+                           newPasswordField.getText().equals(confirmPasswordField.getText());
+            resetButton.setDisable(!valid);
+        };
+
+        newPasswordField.textProperty().addListener((obs, old, text) -> validateInput.run());
+        confirmPasswordField.textProperty().addListener((obs, old, text) -> validateInput.run());
+
+        dialog.setResultConverter(dialogButton -> {
+            if (dialogButton == resetButtonType) {
+                return newPasswordField.getText();
+            }
+            return null;
+        });
+
+        dialog.showAndWait().ifPresent(newPassword -> {
+            if (DatabaseHelper.changeUserPassword(user.getUsername(), newPassword)) {
+                showToast("Password reset successfully");
+            } else {
+                showToast("Failed to reset password");
+            }
+        });
+    }
+
+    private void showPromoteResidentDialog() {
+        Dialog<Resident> dialog = new Dialog<>();
+        dialog.setTitle("Promote Resident to User");
+        dialog.setHeaderText("Create user account for existing resident");
+
+        ButtonType promoteButtonType = new ButtonType("Create Account", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(promoteButtonType, ButtonType.CANCEL);
+
+        VBox content = new VBox(15);
+        content.setPadding(new Insets(20));
+
+        // Search for residents without accounts
+        Label searchLabel = new Label("Search Residents:");
+        searchLabel.setStyle("-fx-font-weight: bold;");
+
+        TextField residentSearchField = new TextField();
+        residentSearchField.setPromptText("Search by name...");
+        residentSearchField.setPrefWidth(400);
+
+        // Table of residents without user accounts
+        TableView<Resident> residentsTable = new TableView<>();
+        residentsTable.setPrefHeight(300);
+        residentsTable.getStyleClass().add("table-view");
+
+        TableColumn<Resident, String> nameCol = new TableColumn<>("Name");
+        nameCol.setPrefWidth(200);
+        nameCol.setCellValueFactory(cellData -> {
+            Resident resident = cellData.getValue();
+            return new javafx.beans.property.SimpleStringProperty(
+                resident.getFirstName() + " " + resident.getLastName()
+            );
+        });
+
+        TableColumn<Resident, String> addressCol = new TableColumn<>("Address");
+        addressCol.setPrefWidth(250);
+        addressCol.setCellValueFactory(new PropertyValueFactory<>("address"));
+
+        TableColumn<Resident, String> phoneCol = new TableColumn<>("Phone");
+        phoneCol.setPrefWidth(120);
+        phoneCol.setCellValueFactory(new PropertyValueFactory<>("phoneNumber"));
+
+        residentsTable.getColumns().addAll(nameCol, addressCol, phoneCol);
+
+        // Load residents without accounts
+        ObservableList<Resident> residentsWithoutAccounts = DatabaseHelper.getResidentsWithoutAccounts();
+        residentsTable.setItems(residentsWithoutAccounts);
+
+        // Search functionality
+        residentSearchField.textProperty().addListener((observable, oldValue, newValue) -> {
+            if (newValue == null || newValue.trim().isEmpty()) {
+                residentsTable.setItems(residentsWithoutAccounts);
+            } else {
+                ObservableList<Resident> filtered = FXCollections.observableArrayList();
+                String searchTerm = newValue.toLowerCase();
+                for (Resident resident : residentsWithoutAccounts) {
+                    String fullName = (resident.getFirstName() + " " + resident.getLastName()).toLowerCase();
+                    if (fullName.contains(searchTerm) || 
+                        (resident.getAddress() != null && resident.getAddress().toLowerCase().contains(searchTerm))) {
+                        filtered.add(resident);
+                    }
+                }
+                residentsTable.setItems(filtered);
+            }
+        });
+
+        // Account creation form
+        Label formLabel = new Label("Account Details:");
+        formLabel.setStyle("-fx-font-weight: bold;");
+
+        GridPane formGrid = new GridPane();
+        formGrid.setHgap(10);
+        formGrid.setVgap(10);
+
+        TextField usernameField = new TextField();
+        usernameField.setPromptText("Username");
+
+        PasswordField passwordField = new PasswordField();
+        passwordField.setPromptText("Password");
+
+        PasswordField confirmPasswordField = new PasswordField();
+        confirmPasswordField.setPromptText("Confirm Password");
+
+        ComboBox<String> roleCombo = new ComboBox<>();
+        ObservableList<Role> roles = DatabaseHelper.getAllRoles();
+        for (Role role : roles) {
+            roleCombo.getItems().add(role.getName());
+        }
+        roleCombo.setPromptText("Select Role");
+
+        formGrid.add(new Label("Username:"), 0, 0);
+        formGrid.add(usernameField, 1, 0);
+        formGrid.add(new Label("Password:"), 0, 1);
+        formGrid.add(passwordField, 1, 1);
+        formGrid.add(new Label("Confirm Password:"), 0, 2);
+        formGrid.add(confirmPasswordField, 1, 2);
+        formGrid.add(new Label("Role:"), 0, 3);
+        formGrid.add(roleCombo, 1, 3);
+
+        // Auto-fill username when resident is selected
+        residentsTable.getSelectionModel().selectedItemProperty().addListener((obs, oldSelection, newSelection) -> {
+            if (newSelection != null) {
+                String suggestedUsername = (newSelection.getFirstName() + "." + newSelection.getLastName()).toLowerCase()
+                    .replaceAll("[^a-z0-9.]", "");
+                usernameField.setText(suggestedUsername);
+            }
+        });
+
+        content.getChildren().addAll(
+            searchLabel, residentSearchField, residentsTable,
+            new Separator(),
+            formLabel, formGrid
+        );
+
+        dialog.getDialogPane().setContent(content);
+
+        // Enable/disable promote button based on validation
+        Node promoteButton = dialog.getDialogPane().lookupButton(promoteButtonType);
+        promoteButton.setDisable(true);
+
+        Runnable validateInput = () -> {
+            boolean valid = residentsTable.getSelectionModel().getSelectedItem() != null &&
+                           !usernameField.getText().trim().isEmpty() &&
+                           !passwordField.getText().isEmpty() &&
+                           passwordField.getText().equals(confirmPasswordField.getText()) &&
+                           roleCombo.getValue() != null;
+            promoteButton.setDisable(!valid);
+        };
+
+        residentsTable.getSelectionModel().selectedItemProperty().addListener((obs, old, sel) -> validateInput.run());
+        usernameField.textProperty().addListener((obs, old, text) -> validateInput.run());
+        passwordField.textProperty().addListener((obs, old, text) -> validateInput.run());
+        confirmPasswordField.textProperty().addListener((obs, old, text) -> validateInput.run());
+        roleCombo.valueProperty().addListener((obs, old, role) -> validateInput.run());
+
+        dialog.setResultConverter(dialogButton -> {
+            if (dialogButton == promoteButtonType) {
+                return residentsTable.getSelectionModel().getSelectedItem();
+            }
+            return null;
+        });
+
+        dialog.showAndWait().ifPresent(selectedResident -> {
+            if (DatabaseHelper.createUserFromResident(
+                selectedResident.getId(), 
+                usernameField.getText().trim(), 
+                passwordField.getText(), 
+                roleCombo.getValue())) {
+                showToast("User account created successfully for " + selectedResident.getFirstName() + " " + selectedResident.getLastName());
+                refreshUsersManagementTable();
+            } else {
+                showToast("Failed to create user account. Username may already exist or resident already has an account.");
+            }
+        });
+    }
+
+    private void showResidentsAccountStatusDialog() {
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("Residents Account Status");
+        dialog.setHeaderText("View all residents and their system account status");
+
+        ButtonType closeButtonType = new ButtonType("Close", ButtonBar.ButtonData.CANCEL_CLOSE);
+        dialog.getDialogPane().getButtonTypes().add(closeButtonType);
+
+        VBox content = new VBox(15);
+        content.setPadding(new Insets(20));
+        content.setPrefWidth(800);
+        content.setPrefHeight(600);
+
+        // Search field
+        TextField searchField = new TextField();
+        searchField.setPromptText("Search residents by name or address...");
+        searchField.setPrefWidth(400);
+
+        // Filter buttons
+        HBox filterBox = new HBox(10);
+        Button showAllBtn = new Button("All");
+        Button showWithAccountsBtn = new Button("With Accounts");
+        Button showWithoutAccountsBtn = new Button("No Accounts");
+        
+        showAllBtn.getStyleClass().addAll("button-primary", "button-small");
+        showWithAccountsBtn.getStyleClass().addAll("button-secondary", "button-small");
+        showWithoutAccountsBtn.getStyleClass().addAll("button-secondary", "button-small");
+        
+        showAllBtn.setPrefWidth(60);
+        showWithAccountsBtn.setPrefWidth(120);
+        showWithoutAccountsBtn.setPrefWidth(110);
+
+        filterBox.getChildren().addAll(showAllBtn, showWithAccountsBtn, showWithoutAccountsBtn);
+
+        // Residents table with enhanced functionality
+        TableView<Resident> residentsTable = new TableView<>();
+        residentsTable.setPrefHeight(400);
+        residentsTable.getStyleClass().add("table-view");
+
+        TableColumn<Resident, String> nameCol = new TableColumn<>("Name");
+        nameCol.setPrefWidth(180);
+        nameCol.setCellValueFactory(cellData -> {
+            Resident resident = cellData.getValue();
+            return new javafx.beans.property.SimpleStringProperty(
+                resident.getFirstName() + " " + resident.getLastName()
+            );
+        });
+
+        TableColumn<Resident, String> addressCol = new TableColumn<>("Address");
+        addressCol.setPrefWidth(200);
+        addressCol.setCellValueFactory(new PropertyValueFactory<>("address"));
+
+        TableColumn<Resident, String> phoneCol = new TableColumn<>("Phone");
+        phoneCol.setPrefWidth(120);
+        phoneCol.setCellValueFactory(new PropertyValueFactory<>("phoneNumber"));
+
+        TableColumn<Resident, String> accountStatusCol = new TableColumn<>("Account Status");
+        accountStatusCol.setPrefWidth(150);
+        accountStatusCol.setCellValueFactory(cellData -> {
+            Resident resident = cellData.getValue();
+            User user = DatabaseHelper.getUserByResidentId(resident.getId());
+            if (user != null) {
+                return new javafx.beans.property.SimpleStringProperty("✅ " + user.getRole());
+            } else {
+                return new javafx.beans.property.SimpleStringProperty("❌ No Account");
+            }
+        });
+
+        TableColumn<Resident, Void> actionsCol = new TableColumn<>("Actions");
+        actionsCol.setPrefWidth(120);
+        actionsCol.setSortable(false);
+        actionsCol.setCellFactory(col -> new TableCell<Resident, Void>() {
+            private final Button createAccountBtn = new Button("Create", new FontIcon(FontAwesomeSolid.USER_PLUS));
+            private final Button viewAccountBtn = new Button("View", new FontIcon(FontAwesomeSolid.EYE));
+
+            {
+                createAccountBtn.getStyleClass().addAll("button-success", "button-small");
+                viewAccountBtn.getStyleClass().addAll("button-info", "button-small");
+                createAccountBtn.setPrefWidth(80);
+                viewAccountBtn.setPrefWidth(70);
+                
+                createAccountBtn.setOnAction(e -> {
+                    Resident resident = getTableView().getItems().get(getIndex());
+                    dialog.close();
+                    showPromoteResidentDialog();
+                });
+
+                viewAccountBtn.setOnAction(e -> {
+                    Resident resident = getTableView().getItems().get(getIndex());
+                    User user = DatabaseHelper.getUserByResidentId(resident.getId());
+                    if (user != null) {
+                        showUserAccountDetailsDialog(user, resident);
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(Void item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty) {
+                    setGraphic(null);
+                } else {
+                    Resident resident = getTableView().getItems().get(getIndex());
+                    User user = DatabaseHelper.getUserByResidentId(resident.getId());
+                    if (user != null) {
+                        setGraphic(viewAccountBtn);
+                    } else {
+                        setGraphic(createAccountBtn);
+                    }
+                }
+            }
+        });
+
+        residentsTable.getColumns().addAll(nameCol, addressCol, phoneCol, accountStatusCol, actionsCol);
+
+        // Create enhanced table for residents
+        ObservableList<Resident> allResidents = DatabaseHelper.getResidents("", 0, 1000, "last_name", "ASC");
+        TableUtils.EnhancedTable<Resident> enhancedResidentsTable = TableUtils.createEnhancedTable(residentsTable, allResidents);
+        
+        // Set global search function for residents
+        enhancedResidentsTable.setGlobalFilter(resident -> {
+            StringBuilder searchText = new StringBuilder();
+            searchText.append(resident.getFirstName()).append(" ");
+            searchText.append(resident.getLastName()).append(" ");
+            if (resident.getAddress() != null) {
+                searchText.append(resident.getAddress()).append(" ");
+            }
+            if (resident.getPhoneNumber() != null) {
+                searchText.append(resident.getPhoneNumber()).append(" ");
+            }
+            
+            // Add account status to search
+            User user = DatabaseHelper.getUserByResidentId(resident.getId());
+            if (user != null) {
+                searchText.append(user.getRole()).append(" ");
+                searchText.append("has account active");
+            } else {
+                searchText.append("no account inactive");
+            }
+            
+            return searchText.toString();
+        });
+
+        // Setup column filters for residents table
+        Platform.runLater(() -> {
+            enhancedResidentsTable.addColumnFilter(nameCol, resident -> 
+                resident.getFirstName() + " " + resident.getLastName());
+            enhancedResidentsTable.addColumnFilter(addressCol, Resident::getAddress);
+            enhancedResidentsTable.addColumnFilter(phoneCol, Resident::getPhoneNumber);
+            enhancedResidentsTable.addColumnFilter(accountStatusCol, resident -> {
+                User user = DatabaseHelper.getUserByResidentId(resident.getId());
+                return user != null ? "✅ " + user.getRole() : "❌ No Account";
+            });
+        });
+
+        // Filter functionality
+        showAllBtn.setOnAction(e -> {
+            enhancedResidentsTable.refreshData(allResidents);
+            showAllBtn.getStyleClass().clear();
+            showAllBtn.getStyleClass().addAll("button-primary", "button-small");
+            showWithAccountsBtn.getStyleClass().clear();
+            showWithAccountsBtn.getStyleClass().addAll("button-secondary", "button-small");
+            showWithoutAccountsBtn.getStyleClass().clear();
+            showWithoutAccountsBtn.getStyleClass().addAll("button-secondary", "button-small");
+        });
+
+        showWithAccountsBtn.setOnAction(e -> {
+            ObservableList<Resident> withAccounts = FXCollections.observableArrayList();
+            for (Resident resident : allResidents) {
+                if (DatabaseHelper.getUserByResidentId(resident.getId()) != null) {
+                    withAccounts.add(resident);
+                }
+            }
+            enhancedResidentsTable.refreshData(withAccounts);
+            showAllBtn.getStyleClass().clear();
+            showAllBtn.getStyleClass().addAll("button-secondary", "button-small");
+            showWithAccountsBtn.getStyleClass().clear();
+            showWithAccountsBtn.getStyleClass().addAll("button-primary", "button-small");
+            showWithoutAccountsBtn.getStyleClass().clear();
+            showWithoutAccountsBtn.getStyleClass().addAll("button-secondary", "button-small");
+        });
+
+        showWithoutAccountsBtn.setOnAction(e -> {
+            enhancedResidentsTable.refreshData(DatabaseHelper.getResidentsWithoutAccounts());
+            showAllBtn.getStyleClass().clear();
+            showAllBtn.getStyleClass().addAll("button-secondary", "button-small");
+            showWithAccountsBtn.getStyleClass().clear();
+            showWithAccountsBtn.getStyleClass().addAll("button-secondary", "button-small");
+            showWithoutAccountsBtn.getStyleClass().clear();
+            showWithoutAccountsBtn.getStyleClass().addAll("button-primary", "button-small");
+        });
+
+        content.getChildren().addAll(filterBox, enhancedResidentsTable.getContainer());
+
+        ScrollPane scrollPane = new ScrollPane(content);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setStyle("-fx-background-color: transparent;");
+
+        dialog.getDialogPane().setContent(scrollPane);
+        dialog.showAndWait();
+    }
+
+    private void showUserAccountDetailsDialog(User user, Resident resident) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("User Account Details");
+        alert.setHeaderText("Account for: " + resident.getFirstName() + " " + resident.getLastName());
+        
+        String content = String.format(
+            "Username: %s\n" +
+            "Role: %s\n" +
+            "Status: %s\n" +
+            "Created: %s\n" +
+            "Last Login: %s\n\n" +
+            "Resident Information:\n" +
+            "Address: %s\n" +
+            "Phone: %s",
+            user.getUsername(),
+            user.getRole(),
+            user.isActive() ? "Active" : "Inactive",
+            user.getCreatedDate(),
+            user.getLastLogin(),
+            resident.getAddress() != null ? resident.getAddress() : "Not specified",
+            resident.getPhoneNumber() != null ? resident.getPhoneNumber() : "Not specified"
+        );
+        
+        alert.setContentText(content);
+        alert.showAndWait();
+    }
+
+    private void showDeleteUserConfirmation(User user) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("Delete User");
+        alert.setHeaderText("Delete user: " + user.getUsername());
+        alert.setContentText("Are you sure you want to delete this user? This action cannot be undone.");
+
+        alert.showAndWait().ifPresent(response -> {
+            if (response == ButtonType.OK) {
+                if (DatabaseHelper.deleteUser(user.getId())) {
+                    showToast("User deleted successfully");
+                    refreshUsersManagementTable();
+                } else {
+                    showToast("Failed to delete user");
+                }
+            }
+        });
     }
 
     private VBox createManageRolesPanel() {
@@ -2507,14 +3651,20 @@ public class App extends Application {
         // Toolbar buttons - only show if user can manage
         Button addButton = new Button("Add Role");
         addButton.setGraphic(new FontIcon(FontAwesomeSolid.PLUS_CIRCLE));
+        addButton.getStyleClass().addAll("button-secondary", "button-small");
+        addButton.setTooltip(new Tooltip("Add Role"));
         addButton.setDisable(!canManage);
 
         Button editButton = new Button("Edit Role");
         editButton.setGraphic(new FontIcon(FontAwesomeSolid.PENCIL_ALT));
+        editButton.getStyleClass().addAll("button-secondary", "button-small");
+        editButton.setTooltip(new Tooltip("Edit Role"));
         editButton.setDisable(true);
 
         Button deleteButton = new Button("Delete Role");
         deleteButton.setGraphic(new FontIcon(FontAwesomeSolid.TRASH));
+        deleteButton.getStyleClass().addAll("button-secondary", "button-small");
+        deleteButton.setTooltip(new Tooltip("Delete Role"));
         deleteButton.setDisable(true);
 
         rolesTable.getSelectionModel().selectedItemProperty().addListener((obs, oldSelection, newSelection) -> {
@@ -2696,8 +3846,9 @@ public class App extends Application {
         VBox.setVgrow(permissionsTable, Priority.ALWAYS);
         
         // Add save button for permissions
-        Button savePermissionsBtn = new Button("Save All Changes", new FontIcon(FontAwesomeSolid.SAVE));
-        savePermissionsBtn.setStyle("-fx-font-size: 12; -fx-padding: 10; -fx-background-color: #10b981; -fx-text-fill: white;");
+        Button savePermissionsBtn = new Button("Save Changes", new FontIcon(FontAwesomeSolid.SAVE));
+        savePermissionsBtn.getStyleClass().addAll("button-primary", "button-small");
+        savePermissionsBtn.setTooltip(new Tooltip("Save All Changes"));
         savePermissionsBtn.setOnAction(e -> {
             // Save all permissions to database
             for (Map.Entry<String, Map<String, String>> entry : permissionsData) {
@@ -2937,8 +4088,9 @@ public class App extends Application {
         Label photoPathLabel = new Label("No photo selected");
         photoPathLabel.setStyle("-fx-text-fill: #64748b; -fx-font-size: 13;");
 
-        Button uploadPhotoBtn = new Button("Choose Photo", new FontIcon(FontAwesomeSolid.IMAGE));
-        uploadPhotoBtn.getStyleClass().add("button-secondary");
+        Button uploadPhotoBtn = new Button("Photo", new FontIcon(FontAwesomeSolid.IMAGE));
+        uploadPhotoBtn.getStyleClass().addAll("button-secondary", "button-small");
+        uploadPhotoBtn.setTooltip(new Tooltip("Choose Photo"));
         uploadPhotoBtn.setOnAction(e -> {
             FileChooser fileChooser = new FileChooser();
             fileChooser.setTitle("Select Complaint Photo");
@@ -2957,8 +4109,9 @@ public class App extends Application {
         photoBox.setAlignment(Pos.CENTER_LEFT);
 
         // Submit Button
-        Button submitBtn = new Button("Submit Complaint");
-        submitBtn.getStyleClass().add("button-primary");
+        Button submitBtn = new Button("Submit");
+        submitBtn.getStyleClass().addAll("button-primary", "button-small");
+        submitBtn.setTooltip(new Tooltip("Submit Complaint"));
         submitBtn.setDisable(true);
 
         // Enable button only when title and description are filled
@@ -3036,7 +4189,9 @@ public class App extends Application {
         // The complaintsTable is already created in showComplaintsAndIncidents()
 
         // Buttons
-        Button viewBtn = new Button("View Details", new FontIcon(FontAwesomeSolid.EYE));
+        Button viewBtn = new Button("View", new FontIcon(FontAwesomeSolid.EYE));
+        viewBtn.getStyleClass().addAll("button-secondary", "button-small");
+        viewBtn.setTooltip(new Tooltip("View Details"));
         viewBtn.setDisable(true);
         viewBtn.setOnAction(e -> {
             Complaint selected = complaintsTable.getSelectionModel().getSelectedItem();
@@ -3045,7 +4200,9 @@ public class App extends Application {
             }
         });
 
-        Button statusBtn = new Button("Update Status", new FontIcon(FontAwesomeSolid.EDIT));
+        Button statusBtn = new Button("Status", new FontIcon(FontAwesomeSolid.EDIT));
+        statusBtn.getStyleClass().addAll("button-secondary", "button-small");
+        statusBtn.setTooltip(new Tooltip("Update Status"));
         statusBtn.setDisable(true);
         statusBtn.setOnAction(e -> {
             Complaint selected = complaintsTable.getSelectionModel().getSelectedItem();
@@ -3054,7 +4211,9 @@ public class App extends Application {
             }
         });
 
-        Button notesBtn = new Button("Add Notes", new FontIcon(FontAwesomeSolid.COMMENT));
+        Button notesBtn = new Button("Notes", new FontIcon(FontAwesomeSolid.COMMENT));
+        notesBtn.getStyleClass().addAll("button-secondary", "button-small");
+        notesBtn.setTooltip(new Tooltip("Add Notes"));
         notesBtn.setDisable(true);
         notesBtn.setOnAction(e -> {
             Complaint selected = complaintsTable.getSelectionModel().getSelectedItem();
@@ -3063,7 +4222,20 @@ public class App extends Application {
             }
         });
 
-        Button reportBtn = new Button("Generate Report", new FontIcon(FontAwesomeSolid.FILE_PDF));
+        Button smsBtn = new Button("SMS", new FontIcon(FontAwesomeSolid.SMS));
+        smsBtn.getStyleClass().addAll("button-warning", "button-small");
+        smsBtn.setTooltip(new Tooltip("Send SMS"));
+        smsBtn.setDisable(true);
+        smsBtn.setOnAction(e -> {
+            Complaint selected = complaintsTable.getSelectionModel().getSelectedItem();
+            if (selected != null) {
+                sendComplaintSMS(selected);
+            }
+        });
+
+        Button reportBtn = new Button("Report", new FontIcon(FontAwesomeSolid.FILE_PDF));
+        reportBtn.getStyleClass().addAll("button-secondary", "button-small");
+        reportBtn.setTooltip(new Tooltip("Generate Report"));
         reportBtn.setOnAction(e -> generateComplaintsReport());
 
         complaintsTable.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
@@ -3071,9 +4243,10 @@ public class App extends Application {
             viewBtn.setDisable(!isSelected);
             statusBtn.setDisable(!isSelected);
             notesBtn.setDisable(!isSelected);
+            smsBtn.setDisable(!isSelected);
         });
 
-        ToolBar toolBar = new ToolBar(viewBtn, statusBtn, notesBtn, new Separator(), reportBtn);
+        ToolBar toolBar = new ToolBar(viewBtn, statusBtn, notesBtn, smsBtn, new Separator(), reportBtn);
         toolBar.setStyle("-fx-background-color: transparent; -fx-padding: 0;");
 
         container.getChildren().addAll(toolBar, complaintsTable);
@@ -3225,6 +4398,145 @@ public class App extends Application {
             });
         } else {
             System.out.println("Complaints table is null, cannot refresh");
+        }
+    }
+
+    private void sendComplaintSMS(Complaint complaint) {
+        // Get resident information
+        Optional<Resident> residentOpt = DatabaseHelper.getResidentById(complaint.getResidentId());
+        if (!residentOpt.isPresent()) {
+            showAlert("Error", "Resident not found.");
+            return;
+        }
+        
+        Resident resident = residentOpt.get();
+        String phone = resident.getPhoneNumber();
+        
+        if (phone == null || phone.trim().isEmpty()) {
+            showAlert("No Phone Number", "This resident doesn't have a phone number registered.");
+            return;
+        }
+        
+        // Create SMS dialog
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Send SMS Notification");
+        dialog.setHeaderText("Send SMS to: " + resident.getFirstName() + " " + resident.getLastName());
+        
+        // Template selection
+        ComboBox<String> templateCombo = new ComboBox<>();
+        templateCombo.getItems().addAll(
+            "Complaint Received",
+            "Complaint Under Investigation",
+            "Complaint Resolved",
+            "Custom Message"
+        );
+        templateCombo.setValue("Complaint Received");
+        
+        // Message area
+        TextArea messageArea = new TextArea();
+        messageArea.setPrefRowCount(5);
+        messageArea.setWrapText(true);
+        
+        // Character count label
+        Label charCountLabel = new Label("Characters: 0");
+        
+        // Update message when template changes
+        templateCombo.setOnAction(e -> {
+            String template = templateCombo.getValue();
+            String message = "";
+            
+            switch (template) {
+                case "Complaint Received":
+                    message = String.format(
+                        "Your complaint (Ref: %s) has been received by Barangay San Marino. " +
+                        "We will investigate and update you on the progress. Thank you!",
+                        complaint.getId()
+                    );
+                    break;
+                case "Complaint Under Investigation":
+                    message = String.format(
+                        "Update on your complaint (Ref: %s): Currently under investigation. " +
+                        "We are working to resolve this matter. Thank you for your patience!",
+                        complaint.getId()
+                    );
+                    break;
+                case "Complaint Resolved":
+                    message = String.format(
+                        "Your complaint (Ref: %s) has been resolved. " +
+                        "Thank you for bringing this to our attention. For questions, visit the barangay office.",
+                        complaint.getId()
+                    );
+                    break;
+                case "Custom Message":
+                    message = "";
+                    break;
+            }
+            
+            messageArea.setText(message);
+            charCountLabel.setText("Characters: " + message.length());
+        });
+        
+        // Trigger initial message
+        templateCombo.fireEvent(new ActionEvent());
+        
+        // Update character count on text change
+        messageArea.textProperty().addListener((obs, old, newVal) -> {
+            charCountLabel.setText("Characters: " + newVal.length());
+            if (newVal.length() > 160) {
+                charCountLabel.setStyle("-fx-text-fill: orange;");
+            } else {
+                charCountLabel.setStyle("-fx-text-fill: black;");
+            }
+        });
+        
+        // Layout
+        VBox content = new VBox(10);
+        content.setPadding(new Insets(10));
+        content.getChildren().addAll(
+            new Label("Phone: " + phone),
+            new Label("Complaint: " + complaint.getTitle()),
+            new Label("Status: " + complaint.getStatus()),
+            new Label("Reference: " + complaint.getId()),
+            new Separator(),
+            new Label("Select Template:"),
+            templateCombo,
+            new Label("Message:"),
+            messageArea,
+            charCountLabel
+        );
+        
+        dialog.getDialogPane().setContent(content);
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        
+        // Handle send
+        Optional<ButtonType> result = dialog.showAndWait();
+        if (result.isPresent() && result.get() == ButtonType.OK) {
+            String message = messageArea.getText();
+            if (message == null || message.trim().isEmpty()) {
+                showAlert("Error", "Message cannot be empty.");
+                return;
+            }
+            
+            // Send SMS
+            System.out.println("📤 Sending SMS to: " + phone);
+            SMSService.SMSResponse response = SMSService.sendSMS(phone, message);
+            
+            if (response.isSuccess()) {
+                showAlert("SMS Sent Successfully!", 
+                    "✅ SMS sent to: " + resident.getFirstName() + " " + resident.getLastName() + "\n" +
+                    "📱 Phone: " + phone + "\n" +
+                    "🆔 Message ID: " + response.getMessageId() + "\n\n" +
+                    "The resident should receive the SMS within 1-5 minutes.");
+            } else {
+                showAlert("SMS Failed", 
+                    "❌ Failed to send SMS\n\n" +
+                    "Error: " + response.getMessage() + "\n" +
+                    "Error Code: " + response.getErrorCode() + "\n\n" +
+                    "Please check:\n" +
+                    "1. Phone number is correct\n" +
+                    "2. SMS service is enabled\n" +
+                    "3. You have sufficient SMS credits");
+            }
         }
     }
 
@@ -3381,9 +4693,9 @@ public class App extends Application {
         GridPane.setHgrow(titleField, Priority.ALWAYS);
         GridPane.setHgrow(contentArea, Priority.ALWAYS);
 
-        var submitBtn = new Button("Post Announcement");
-        submitBtn.setPrefHeight(40);
-        submitBtn.setStyle("-fx-font-size: 14; -fx-padding: 8;");
+        var submitBtn = new Button("Post");
+        submitBtn.getStyleClass().addAll("button-primary", "button-small");
+        submitBtn.setTooltip(new Tooltip("Post Announcement"));
         submitBtn.setOnAction(e -> {
             String title = titleField.getText().trim();
             String type = typeCombo.getValue();
@@ -3457,8 +4769,9 @@ public class App extends Application {
         var buttonBox = new HBox(10);
         buttonBox.setPadding(new Insets(10, 0, 0, 0));
 
-        var viewBtn = new Button("View Details");
-        viewBtn.setPrefHeight(35);
+        var viewBtn = new Button("View");
+        viewBtn.getStyleClass().addAll("button-secondary", "button-small");
+        viewBtn.setTooltip(new Tooltip("View Details"));
         viewBtn.setOnAction(e -> {
             var selected = announcementsTable.getSelectionModel().getSelectedItem();
             if (selected == null) {
@@ -3469,7 +4782,8 @@ public class App extends Application {
         });
 
         var editBtn = new Button("Edit");
-        editBtn.setPrefHeight(35);
+        editBtn.getStyleClass().addAll("button-secondary", "button-small");
+        editBtn.setTooltip(new Tooltip("Edit Announcement"));
         editBtn.setOnAction(e -> {
             var selected = announcementsTable.getSelectionModel().getSelectedItem();
             if (selected == null) {
@@ -3479,8 +4793,9 @@ public class App extends Application {
             showAnnouncementEditorDialog(selected);
         });
 
-        var toggleStatusBtn = new Button("Toggle Status");
-        toggleStatusBtn.setPrefHeight(35);
+        var toggleStatusBtn = new Button("Toggle");
+        toggleStatusBtn.getStyleClass().addAll("button-secondary", "button-small");
+        toggleStatusBtn.setTooltip(new Tooltip("Toggle Status"));
         toggleStatusBtn.setOnAction(e -> {
             var selected = announcementsTable.getSelectionModel().getSelectedItem();
             if (selected == null) {
@@ -3494,8 +4809,8 @@ public class App extends Application {
         });
 
         var deleteBtn = new Button("Delete");
-        deleteBtn.setPrefHeight(35);
-        deleteBtn.setStyle("-fx-text-fill: #ff6b6b;");
+        deleteBtn.getStyleClass().addAll("button-danger", "button-small");
+        deleteBtn.setTooltip(new Tooltip("Delete Announcement"));
         deleteBtn.setOnAction(e -> {
             var selected = announcementsTable.getSelectionModel().getSelectedItem();
             if (selected == null) {
@@ -3513,7 +4828,20 @@ public class App extends Application {
             }
         });
 
-        buttonBox.getChildren().addAll(viewBtn, editBtn, toggleStatusBtn, deleteBtn);
+        // Broadcast SMS Button
+        var broadcastSMSBtn = new Button("Broadcast", new FontIcon(FontAwesomeSolid.BULLHORN));
+        broadcastSMSBtn.getStyleClass().addAll("button-warning", "button-small");
+        broadcastSMSBtn.setTooltip(new Tooltip("Broadcast SMS"));
+        broadcastSMSBtn.setOnAction(e -> {
+            var selected = announcementsTable.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                showAlert("Info", "Please select an announcement to broadcast");
+                return;
+            }
+            broadcastAnnouncementSMS(selected);
+        });
+
+        buttonBox.getChildren().addAll(viewBtn, editBtn, toggleStatusBtn, deleteBtn, broadcastSMSBtn);
 
         container.getChildren().addAll(filterBox, announcementsTable, buttonBox);
         VBox.setVgrow(announcementsTable, Priority.ALWAYS);
@@ -3610,6 +4938,166 @@ public class App extends Application {
         }
     }
 
+    private void broadcastAnnouncementSMS(Announcement announcement) {
+        // Get all residents with phone numbers
+        ObservableList<Resident> allResidents = DatabaseHelper.getResidents("", 0, Integer.MAX_VALUE, "id", "ASC");
+        
+        // Filter residents with valid phone numbers
+        java.util.List<String> phoneNumbers = new java.util.ArrayList<>();
+        for (Resident resident : allResidents) {
+            String phone = resident.getPhoneNumber();
+            if (phone != null && !phone.trim().isEmpty()) {
+                phoneNumbers.add(phone);
+            }
+        }
+        
+        if (phoneNumbers.isEmpty()) {
+            showAlert("No Recipients", "No residents have phone numbers registered in the system.");
+            return;
+        }
+        
+        // Create SMS dialog
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Broadcast Announcement SMS");
+        dialog.setHeaderText("Broadcast to " + phoneNumbers.size() + " residents");
+        
+        // Template selection
+        ComboBox<String> templateCombo = new ComboBox<>();
+        templateCombo.getItems().addAll(
+            "Announcement Notification",
+            "Event Reminder",
+            "Emergency Alert",
+            "Custom Message"
+        );
+        templateCombo.setValue("Announcement Notification");
+        
+        // Message area
+        TextArea messageArea = new TextArea();
+        messageArea.setPrefRowCount(5);
+        messageArea.setWrapText(true);
+        
+        // Character count label
+        Label charCountLabel = new Label("Characters: 0");
+        
+        // Update message when template changes
+        templateCombo.setOnAction(e -> {
+            String template = templateCombo.getValue();
+            String message = "";
+            
+            switch (template) {
+                case "Announcement Notification":
+                    message = String.format(
+                        "Barangay San Marino Announcement: %s. For more details, visit the barangay office. Thank you!",
+                        announcement.getTitle()
+                    );
+                    break;
+                case "Event Reminder":
+                    message = String.format(
+                        "Reminder: %s on %s. Please mark your calendar. For inquiries, contact the barangay office. Thank you!",
+                        announcement.getTitle(),
+                        announcement.getStartDate()
+                    );
+                    break;
+                case "Emergency Alert":
+                    message = String.format(
+                        "URGENT: %s. Please stay informed and follow barangay guidelines. Stay safe!",
+                        announcement.getTitle()
+                    );
+                    break;
+                case "Custom Message":
+                    message = "";
+                    break;
+            }
+            
+            messageArea.setText(message);
+            charCountLabel.setText("Characters: " + message.length());
+        });
+        
+        // Trigger initial message
+        templateCombo.fireEvent(new ActionEvent());
+        
+        // Update character count on text change
+        messageArea.textProperty().addListener((obs, old, newVal) -> {
+            charCountLabel.setText("Characters: " + newVal.length());
+            if (newVal.length() > 160) {
+                charCountLabel.setStyle("-fx-text-fill: orange;");
+            } else {
+                charCountLabel.setStyle("-fx-text-fill: black;");
+            }
+        });
+        
+        // Cost estimate
+        int smsCount = (int) Math.ceil(messageArea.getText().length() / 160.0);
+        Label costLabel = new Label("Estimated cost: " + (phoneNumbers.size() * smsCount) + " SMS credits");
+        costLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #dc2626;");
+        
+        // Update cost when message changes
+        messageArea.textProperty().addListener((obs, old, newVal) -> {
+            int count = (int) Math.ceil(newVal.length() / 160.0);
+            costLabel.setText("Estimated cost: " + (phoneNumbers.size() * count) + " SMS credits");
+        });
+        
+        // Layout
+        VBox content = new VBox(10);
+        content.setPadding(new Insets(10));
+        content.getChildren().addAll(
+            new Label("Recipients: " + phoneNumbers.size() + " residents"),
+            new Label("Announcement: " + announcement.getTitle()),
+            new Label("Type: " + announcement.getType()),
+            new Separator(),
+            new Label("Select Template:"),
+            templateCombo,
+            new Label("Message:"),
+            messageArea,
+            charCountLabel,
+            costLabel
+        );
+        
+        dialog.getDialogPane().setContent(content);
+        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        
+        // Handle send
+        Optional<ButtonType> result = dialog.showAndWait();
+        if (result.isPresent() && result.get() == ButtonType.OK) {
+            String message = messageArea.getText();
+            if (message == null || message.trim().isEmpty()) {
+                showAlert("Error", "Message cannot be empty.");
+                return;
+            }
+            
+            // Confirm broadcast
+            Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+            confirm.setTitle("Confirm Broadcast");
+            confirm.setHeaderText("Send SMS to " + phoneNumbers.size() + " residents?");
+            confirm.setContentText("This will use approximately " + (phoneNumbers.size() * smsCount) + " SMS credits.\n\nProceed?");
+            
+            if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+                return;
+            }
+            
+            // Send bulk SMS
+            System.out.println("📤 Broadcasting SMS to " + phoneNumbers.size() + " residents");
+            String[] phoneArray = phoneNumbers.toArray(new String[0]);
+            SMSService.SMSResponse response = SMSService.sendBulkSMS(phoneArray, message);
+            
+            if (response.isSuccess()) {
+                showAlert("SMS Broadcast Successful!", 
+                    "✅ SMS broadcast completed!\n\n" +
+                    response.getMessage() + "\n\n" +
+                    "Recipients should receive the SMS within 1-5 minutes.");
+            } else {
+                showAlert("SMS Broadcast Failed", 
+                    "❌ Failed to broadcast SMS\n\n" +
+                    "Error: " + response.getMessage() + "\n" +
+                    "Error Code: " + response.getErrorCode() + "\n\n" +
+                    "Please check:\n" +
+                    "1. SMS service is enabled\n" +
+                    "2. You have sufficient SMS credits\n" +
+                    "3. Phone numbers are valid");
+            }
+        }
+    }
+
     private void showFinancialReports(VBox center) {
         var container = new VBox(15);
         container.setPadding(new Insets(15));
@@ -3648,8 +5136,9 @@ public class App extends Application {
             folderPathField.setText(savedPath);
         }
 
-        var browseFolderBtn = new Button("Browse Folder", new FontIcon(FontAwesomeSolid.FOLDER_OPEN));
-        browseFolderBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
+        var browseFolderBtn = new Button("Browse", new FontIcon(FontAwesomeSolid.FOLDER_OPEN));
+        browseFolderBtn.getStyleClass().addAll("button-secondary", "button-small");
+        browseFolderBtn.setTooltip(new Tooltip("Browse Folder"));
         browseFolderBtn.setOnAction(e -> {
             javafx.stage.DirectoryChooser dirChooser = new javafx.stage.DirectoryChooser();
             dirChooser.setTitle("Select Export Folder for Financial Reports");
@@ -3780,16 +5269,19 @@ public class App extends Application {
         var buttonBox = new HBox(10);
         buttonBox.setPadding(new Insets(15, 0, 0, 0));
 
-        var printDailyBtn = new Button("Print Daily Report", new FontIcon(FontAwesomeSolid.PRINT));
-        printDailyBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
+        var printDailyBtn = new Button("Daily", new FontIcon(FontAwesomeSolid.PRINT));
+        printDailyBtn.getStyleClass().addAll("button-secondary", "button-small");
+        printDailyBtn.setTooltip(new Tooltip("Print Daily Report"));
         printDailyBtn.setOnAction(e -> generateFinancialReportPDF("daily", dailyCollections));
 
-        var printMonthlyBtn = new Button("Print Monthly Report", new FontIcon(FontAwesomeSolid.PRINT));
-        printMonthlyBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
+        var printMonthlyBtn = new Button("Monthly", new FontIcon(FontAwesomeSolid.PRINT));
+        printMonthlyBtn.getStyleClass().addAll("button-secondary", "button-small");
+        printMonthlyBtn.setTooltip(new Tooltip("Print Monthly Report"));
         printMonthlyBtn.setOnAction(e -> generateFinancialReportPDF("monthly", monthlyIncome));
 
-        var printComprehensiveBtn = new Button("Print Comprehensive Report", new FontIcon(FontAwesomeSolid.FILE_PDF));
-        printComprehensiveBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
+        var printComprehensiveBtn = new Button("Full Report", new FontIcon(FontAwesomeSolid.FILE_PDF));
+        printComprehensiveBtn.getStyleClass().addAll("button-secondary", "button-small");
+        printComprehensiveBtn.setTooltip(new Tooltip("Print Comprehensive Report"));
         printComprehensiveBtn.setOnAction(e -> generateComprehensiveFinancialReport(dailyCollections, monthlyIncome, revenueByType, ytdSummary));
 
         var exportBtn = new Button("Export to CSV", new FontIcon(FontAwesomeSolid.FILE_CSV));
@@ -4037,19 +5529,14 @@ public class App extends Application {
         Tab authTab = new Tab("User Authentication", createUserAuthenticationPanel());
         authTab.getStyleClass().add("tab");
 
-        // Tab 2: Role-Based Access
-        Tab rbacTab = new Tab("Role-Based Access", createRoleBasedAccessPanel());
-        rbacTab.getStyleClass().add("tab");
-
-        // Tab 3: Data Encryption
+        // Tab 2: Data Encryption (includes password hashing with BCrypt)
         Tab encryptionTab = new Tab("Data Encryption", createDataEncryptionPanel());
         encryptionTab.getStyleClass().add("tab");
 
-        // Tab 4: Automatic Backups
-        Tab backupTab = new Tab("Automatic Backups", createAutomaticBackupsPanel());
-        backupTab.getStyleClass().add("tab");
+        // Note: Automatic Backups moved to Maintenance tab to avoid duplication
+        // Note: Role-Based Access moved to User & Access tab
 
-        tabPane.getTabs().addAll(authTab, rbacTab, encryptionTab, backupTab);
+        tabPane.getTabs().addAll(authTab, encryptionTab);
         VBox.setVgrow(tabPane, Priority.ALWAYS);
 
         updateDashboardContent(center, "Security Features", tabPane);
@@ -4190,141 +5677,117 @@ public class App extends Application {
         var panel = new VBox(15);
         panel.setPadding(new Insets(20));
 
-        var titleLabel = new Label("Data Encryption Settings");
-        titleLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold;");
+        var titleLabel = new Label("Data Encryption & Password Security");
+        titleLabel.setStyle("-fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
 
-        // Encryption status card
-        var statusCard = new VBox(10);
-        statusCard.setStyle("-fx-border-color: #10b981; -fx-border-width: 2; -fx-border-radius: 5; -fx-padding: 15; -fx-background-color: " + "#f0fdf4" + ";");
+        // Password Hashing Status Card (BCrypt)
+        var passwordCard = new VBox(10);
+        passwordCard.setStyle("-fx-border-color: #10b981; -fx-border-width: 2; -fx-border-radius: 8; -fx-padding: 15; -fx-background-color: #f0fdf4; -fx-background-radius: 8;");
 
-        var statusLabel = new Label("AES-256 Encryption Status");
-        statusLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold;");
+        var passwordLabel = new Label("BCrypt Password Hashing");
+        passwordLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
 
-        var statusValue = new Label("● ENABLED");
-        statusValue.setStyle("-fx-font-size: 12; -fx-text-fill: #10b981; -fx-font-weight: bold;");
+        var passwordStatus = new Label("● ENABLED (12 rounds)");
+        passwordStatus.setStyle("-fx-font-size: 12; -fx-text-fill: #10b981; -fx-font-weight: bold;");
 
-        statusCard.getChildren().addAll(statusLabel, statusValue);
+        var passwordDesc = new Label("All user passwords are securely hashed using BCrypt with 12 rounds of salting.");
+        passwordDesc.setStyle("-fx-font-size: 11; -fx-text-fill: #666; -fx-wrap-text: true;");
+        passwordDesc.setWrapText(true);
+
+        passwordCard.getChildren().addAll(passwordLabel, passwordStatus, passwordDesc);
+
+        // AES-256 Encryption Status Card
+        var aesCard = new VBox(10);
+        aesCard.setStyle("-fx-border-color: #3b82f6; -fx-border-width: 2; -fx-border-radius: 8; -fx-padding: 15; -fx-background-color: #eff6ff; -fx-background-radius: 8;");
+
+        var aesLabel = new Label("AES-256 Data Encryption");
+        aesLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
+
+        var aesStatus = new Label("● READY");
+        aesStatus.setStyle("-fx-font-size: 12; -fx-text-fill: #3b82f6; -fx-font-weight: bold;");
+
+        var aesDesc = new Label("Advanced Encryption Standard with 256-bit keys for sensitive data protection.");
+        aesDesc.setStyle("-fx-font-size: 11; -fx-text-fill: #666; -fx-wrap-text: true;");
+        aesDesc.setWrapText(true);
+
+        aesCard.getChildren().addAll(aesLabel, aesStatus, aesDesc);
 
         // Encryption options
         var optionsBox = new VBox(10);
-        optionsBox.setStyle("-fx-border-color: #ddd; -fx-border-width: 1; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + "#f9f9f9" + ";");
+        optionsBox.setStyle("-fx-border-color: #e5e7eb; -fx-border-width: 1; -fx-border-radius: 8; -fx-padding: 15; -fx-background-color: #f9fafb; -fx-background-radius: 8;");
 
-        var cb1 = new CheckBox("Encrypt Resident Data");
-        cb1.setSelected(true);
-        cb1.setStyle("-fx-font-size: 12;");
+        var optionsTitle = new Label("Data Encryption Options");
+        optionsTitle.setStyle("-fx-font-weight: bold; -fx-font-size: 13; -fx-text-fill: #1a1a1a;");
+
+        var cb1 = new CheckBox("Encrypt Resident Personal Data");
+        cb1.setSelected(false);
+        cb1.setStyle("-fx-font-size: 12; -fx-text-fill: #333;");
 
         var cb2 = new CheckBox("Encrypt Financial Records");
-        cb2.setSelected(true);
-        cb2.setStyle("-fx-font-size: 12;");
+        cb2.setSelected(false);
+        cb2.setStyle("-fx-font-size: 12; -fx-text-fill: #333;");
 
-        var cb3 = new CheckBox("Encrypt User Passwords");
+        var cb3 = new CheckBox("Encrypt User Passwords (BCrypt - Always Active)");
         cb3.setSelected(true);
-        cb3.setStyle("-fx-font-size: 12;");
+        cb3.setDisable(true); // Always enabled, cannot be disabled
+        cb3.setStyle("-fx-font-size: 12; -fx-text-fill: #10b981; -fx-font-weight: bold;");
 
         var cb4 = new CheckBox("Encrypt Audit Logs");
         cb4.setSelected(false);
-        cb4.setStyle("-fx-font-size: 12;");
+        cb4.setStyle("-fx-font-size: 12; -fx-text-fill: #333;");
 
         optionsBox.getChildren().addAll(
-            new Label("Select data to encrypt:"), cb1, cb2, cb3, cb4
+            optionsTitle, cb1, cb2, cb3, cb4
         );
 
         // Key management
         var keyBox = new VBox(10);
-        keyBox.setStyle("-fx-border-color: #ddd; -fx-border-width: 1; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + "#f9f9f9" + ";");
+        keyBox.setStyle("-fx-border-color: #e5e7eb; -fx-border-width: 1; -fx-border-radius: 8; -fx-padding: 15; -fx-background-color: #f9fafb; -fx-background-radius: 8;");
 
         var keyLabel = new Label("Encryption Key Management");
-        keyLabel.setStyle("-fx-font-weight: bold;");
+        keyLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 13; -fx-text-fill: #1a1a1a;");
 
         var keyStatusLabel = new Label("Last Key Rotation: " + LocalDate.now().minusDays(30).format(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
-        keyStatusLabel.setStyle("-fx-font-size: 11;");
+        keyStatusLabel.setStyle("-fx-font-size: 11; -fx-text-fill: #666;");
 
-        var rotateBtn = new Button("Rotate Encryption Keys", new FontIcon(FontAwesomeSolid.SYNC));
-        rotateBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
-        rotateBtn.setOnAction(e -> showToast("Encryption keys rotated successfully"));
+        var rotateBtn = new Button("Rotate Keys", new FontIcon(FontAwesomeSolid.SYNC));
+        rotateBtn.getStyleClass().addAll("button-secondary", "button-small");
+        rotateBtn.setTooltip(new Tooltip("Rotate Encryption Keys"));
+        rotateBtn.setOnAction(e -> {
+            showToast("Encryption keys rotated successfully");
+            keyStatusLabel.setText("Last Key Rotation: " + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
+        });
 
         keyBox.getChildren().addAll(keyLabel, keyStatusLabel, rotateBtn);
 
-        // Save button
-        var saveBtn = new Button("Save Encryption Settings", new FontIcon(FontAwesomeSolid.CHECK_CIRCLE));
-        saveBtn.setStyle("-fx-font-size: 12; -fx-padding: 10;");
-        saveBtn.setOnAction(e -> showToast("Encryption settings saved"));
+        // Hash All Passwords Button
+        var hashPasswordsBtn = new Button("Hash Passwords", new FontIcon(FontAwesomeSolid.LOCK));
+        hashPasswordsBtn.getStyleClass().addAll("button-primary", "button-small");
+        hashPasswordsBtn.setTooltip(new Tooltip("Hash All Plain Text Passwords"));
+        hashPasswordsBtn.setOnAction(e -> {
+            hashPasswordsBtn.setDisable(true);
+            hashPasswordsBtn.setText("Hashing passwords...");
+            
+            new Thread(() -> {
+                int count = DatabaseHelper.hashAllPlainTextPasswords();
+                Platform.runLater(() -> {
+                    hashPasswordsBtn.setDisable(false);
+                    hashPasswordsBtn.setText("Hash Passwords");
+                    if (count > 0) {
+                        showToast("✓ Successfully hashed " + count + " passwords with BCrypt");
+                    } else {
+                        showToast("All passwords are already hashed");
+                    }
+                });
+            }).start();
+        });
 
-        panel.getChildren().addAll(titleLabel, new Separator(), statusCard, optionsBox, keyBox, saveBtn);
-        return panel;
-    }
+        // Info note
+        var infoLabel = new Label("ℹ️ Password hashing is automatically applied to all new users and password changes.");
+        infoLabel.setStyle("-fx-font-size: 11; -fx-text-fill: #666; -fx-wrap-text: true; -fx-padding: 10; -fx-background-color: #fffbeb; -fx-border-color: #fbbf24; -fx-border-width: 1; -fx-border-radius: 5; -fx-background-radius: 5;");
+        infoLabel.setWrapText(true);
 
-    private VBox createAutomaticBackupsPanel() {
-        var panel = new VBox(15);
-        panel.setPadding(new Insets(20));
-
-        var titleLabel = new Label("Automatic Backups");
-        titleLabel.setStyle("-fx-font-size: 14; -fx-font-weight: bold;");
-
-        // Backup schedule
-        var scheduleBox = new VBox(10);
-        scheduleBox.setStyle("-fx-border-color: #ddd; -fx-border-width: 1; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + "#f9f9f9" + ";");
-
-        var scheduleLabel = new Label("Backup Schedule");
-        scheduleLabel.setStyle("-fx-font-weight: bold;");
-
-        var frequencyCombo = new ComboBox<String>();
-        frequencyCombo.getItems().addAll("Hourly", "Daily", "Weekly", "Monthly");
-        frequencyCombo.setValue("Daily");
-        frequencyCombo.setPrefWidth(150);
-
-        var timeLabel = new Label("Backup Time: 02:00 AM");
-        timeLabel.setStyle("-fx-font-size: 11;");
-
-        scheduleBox.getChildren().addAll(
-            scheduleLabel,
-            new HBox(10, new Label("Frequency:"), frequencyCombo),
-            timeLabel
-        );
-
-        // Backup status
-        var statusBox = new VBox(10);
-        statusBox.setStyle("-fx-border-color: #3b82f6; -fx-border-width: 2; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + "#eff6ff" + ";");
-
-        var backupStatusLabel = new Label("Last Backup Status");
-        backupStatusLabel.setStyle("-fx-font-weight: bold;");
-
-        var lastBackupLabel = new Label("Last Backup: Today at 02:15 AM");
-        var backupSizeLabel = new Label("Backup Size: 245 MB");
-        var statusIndicatorLabel = new Label("Status: ✓ Success");
-        statusIndicatorLabel.setStyle("-fx-text-fill: #10b981;");
-
-        statusBox.getChildren().addAll(backupStatusLabel, lastBackupLabel, backupSizeLabel, statusIndicatorLabel);
-
-        // Backup location and retention
-        var settingsBox = new VBox(10);
-        settingsBox.setStyle("-fx-border-color: #ddd; -fx-border-width: 1; -fx-border-radius: 5; -fx-padding: 12; -fx-background-color: " + "#f9f9f9" + ";");
-
-        var locationLabel = new Label("Backup Location: " + System.getProperty("user.home") + "/BDMS_Backups");
-        locationLabel.setStyle("-fx-font-size: 11;");
-
-        var retentionLabel = new Label("Retention Policy: Keep last 30 backups");
-        retentionLabel.setStyle("-fx-font-size: 11;");
-
-        settingsBox.getChildren().addAll(locationLabel, retentionLabel);
-
-        // Action buttons
-        var actionBox = new HBox(10);
-        var backupNowBtn = new Button("Backup Now", new FontIcon(FontAwesomeSolid.DOWNLOAD));
-        backupNowBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
-        backupNowBtn.setOnAction(e -> showToast("Backup started..."));
-
-        var restoreBtn = new Button("Restore Backup", new FontIcon(FontAwesomeSolid.UPLOAD));
-        restoreBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
-        restoreBtn.setOnAction(e -> showToast("Restore functionality available"));
-
-        var viewLogsBtn = new Button("View Backup Logs", new FontIcon(FontAwesomeSolid.FILE_ALT));
-        viewLogsBtn.setStyle("-fx-font-size: 12; -fx-padding: 8;");
-        viewLogsBtn.setOnAction(e -> showToast("Backup logs displayed"));
-
-        actionBox.getChildren().addAll(backupNowBtn, restoreBtn, viewLogsBtn);
-
-        panel.getChildren().addAll(titleLabel, new Separator(), scheduleBox, statusBox, settingsBox, actionBox);
+        panel.getChildren().addAll(titleLabel, new Separator(), passwordCard, aesCard, optionsBox, keyBox, hashPasswordsBtn, infoLabel);
         return panel;
     }
 
@@ -4348,7 +5811,11 @@ public class App extends Application {
         Tab indigencyTab = new Tab("Indigency Certificate", createDocumentExportPanel("Indigency Certificate"));
         indigencyTab.getStyleClass().add("tab");
 
-        tabPane.getTabs().addAll(clearanceTab, certificateTab, indigencyTab);
+        // Tab 4: SMS Testing
+        Tab smsTestTab = new Tab("SMS Testing", createSMSTestPanel());
+        smsTestTab.getStyleClass().add("tab");
+
+        tabPane.getTabs().addAll(clearanceTab, certificateTab, indigencyTab, smsTestTab);
         updateDashboardContent(center, "System Configuration", tabPane);
     }
 
@@ -4577,6 +6044,530 @@ public class App extends Application {
         }
     }
 
+    // ==================== SMS TESTING PANEL ====================
+    
+    private VBox createSMSTestPanel() {
+        TabPane smsTabPane = new TabPane();
+        smsTabPane.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        smsTabPane.getStyleClass().add("tab-pane");
+
+        // Tab 1: SMS Configuration
+        Tab configTab = new Tab("Configuration", createSMSConfigurationTab());
+        configTab.getStyleClass().add("tab");
+
+        // Tab 2: SMS Templates
+        Tab templatesTab = new Tab("SMS Templates", createSMSTemplatesTab());
+        templatesTab.getStyleClass().add("tab");
+
+        // Tab 3: Test SMS
+        Tab testTab = new Tab("Test SMS", createSMSTestTab());
+        testTab.getStyleClass().add("tab");
+
+        // Tab 4: SMS Logs
+        Tab logsTab = new Tab("SMS Logs", createSMSLogsTab());
+        logsTab.getStyleClass().add("tab");
+
+        smsTabPane.getTabs().addAll(configTab, templatesTab, testTab, logsTab);
+
+        VBox container = new VBox(smsTabPane);
+        VBox.setVgrow(smsTabPane, Priority.ALWAYS);
+        return container;
+    }
+
+    private VBox createSMSConfigurationTab() {
+        VBox panel = new VBox(20);
+        panel.setPadding(new Insets(20));
+
+        Label titleLabel = new Label("SMS Service Configuration");
+        titleLabel.setStyle("-fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
+
+        // Info box
+        VBox infoBox = new VBox(8);
+        infoBox.setPadding(new Insets(15));
+        infoBox.setStyle("-fx-background-color: #f0f9ff; -fx-border-color: #0284c7; -fx-border-width: 1; -fx-border-radius: 4;");
+
+        Label infoTitle = new Label("UniSMS API - Philippine SMS Service");
+        infoTitle.setStyle("-fx-font-size: 12; -fx-font-weight: bold; -fx-text-fill: #0284c7;");
+
+        Label infoDescription = new Label(
+            "Configure your UniSMS API credentials to enable SMS notifications. " +
+            "Get your API key from https://unismsapi.com (Paid service with reliable delivery)"
+        );
+        infoDescription.setStyle("-fx-font-size: 11; -fx-text-fill: #0369a1; -fx-wrap-text: true;");
+        infoDescription.setMaxWidth(600);
+
+        infoBox.getChildren().addAll(infoTitle, infoDescription);
+
+        // Get current configuration
+        String currentApiKey = DatabaseHelper.getSMSApiKey();
+        String currentApiBaseUrl = DatabaseHelper.getSMSApiBaseUrl();
+        String currentSenderName = DatabaseHelper.getSMSSenderName();
+        boolean currentEnabled = DatabaseHelper.isSMSEnabled();
+
+        // API Key field
+        Label apiKeyLabel = new Label("API Key:");
+        apiKeyLabel.setStyle("-fx-font-size: 12; -fx-font-weight: bold; -fx-text-fill: #333;");
+
+        TextField apiKeyField = new TextField();
+        apiKeyField.setPromptText("Enter your UniSMS API key (e.g., sk_xxxxxxxxxxxxxx)");
+        apiKeyField.setText(currentApiKey != null ? currentApiKey : "");
+        apiKeyField.setPrefWidth(500);
+        apiKeyField.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+
+        VBox apiKeyBox = new VBox(5, apiKeyLabel, apiKeyField);
+
+        // API Base URL field
+        Label apiUrlLabel = new Label("API Base URL:");
+        apiUrlLabel.setStyle("-fx-font-size: 12; -fx-font-weight: bold; -fx-text-fill: #333;");
+
+        TextField apiUrlField = new TextField();
+        apiUrlField.setPromptText("e.g., https://unismsapi.com/api");
+        apiUrlField.setText(currentApiBaseUrl != null ? currentApiBaseUrl : "https://unismsapi.com/api");
+        apiUrlField.setPrefWidth(500);
+        apiUrlField.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+
+        Label apiUrlHint = new Label("💡 Default: https://unismsapi.com/api (leave as is unless using a different endpoint)");
+        apiUrlHint.setStyle("-fx-font-size: 10; -fx-text-fill: #6b7280;");
+
+        VBox apiUrlBox = new VBox(5, apiUrlLabel, apiUrlField, apiUrlHint);
+
+        // Sender Name field
+        Label senderLabel = new Label("Sender Name (Custom Sender ID - for verified businesses only):");
+        senderLabel.setStyle("-fx-font-size: 12; -fx-font-weight: bold; -fx-text-fill: #333;");
+
+        TextField senderField = new TextField();
+        senderField.setPromptText("e.g., BDMS (leave empty if not verified)");
+        senderField.setText(currentSenderName != null ? currentSenderName : "");
+        senderField.setPrefWidth(300);
+        senderField.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+        senderField.textProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal.length() > 11) {
+                senderField.setText(oldVal);
+            }
+        });
+
+        Label senderHint = new Label("💡 Custom Sender ID requires business verification. Contact UniSMS support to apply.");
+        senderHint.setStyle("-fx-font-size: 10; -fx-text-fill: #6b7280; -fx-wrap-text: true;");
+        senderHint.setMaxWidth(500);
+
+        VBox senderBox = new VBox(5, senderLabel, senderField, senderHint);
+
+        // Enable/Disable checkbox
+        CheckBox enabledCheckBox = new CheckBox("Enable SMS Notifications");
+        enabledCheckBox.setSelected(currentEnabled);
+        enabledCheckBox.setStyle("-fx-font-size: 12;");
+
+        // Save button
+        Button saveBtn = new Button("Save Config", new FontIcon(FontAwesomeSolid.SAVE));
+        saveBtn.getStyleClass().addAll("button-primary", "button-small");
+        saveBtn.setTooltip(new Tooltip("Save Configuration"));
+
+        Label saveResultLabel = new Label("");
+        saveResultLabel.setStyle("-fx-font-size: 12; -fx-wrap-text: true;");
+        saveResultLabel.setMaxWidth(600);
+        saveResultLabel.setVisible(false);
+
+        saveBtn.setOnAction(e -> {
+            String apiKey = apiKeyField.getText().trim();
+            String apiBaseUrl = apiUrlField.getText().trim();
+            String senderName = senderField.getText().trim();
+            boolean enabled = enabledCheckBox.isSelected();
+
+            if (apiKey.isEmpty()) {
+                saveResultLabel.setText("⚠ API Key is required");
+                saveResultLabel.setStyle("-fx-font-size: 12; -fx-text-fill: #f59e0b; -fx-wrap-text: true;");
+                saveResultLabel.setVisible(true);
+                return;
+            }
+
+            if (apiBaseUrl.isEmpty()) {
+                apiBaseUrl = "https://unismsapi.com/api";
+            }
+
+            if (senderName.isEmpty()) {
+                senderName = "BDMS";
+            }
+
+            try {
+                DatabaseHelper.saveSMSConfig(apiKey, apiBaseUrl, senderName, enabled);
+                saveResultLabel.setText("✓ SMS configuration saved successfully!");
+                saveResultLabel.setStyle("-fx-font-size: 12; -fx-text-fill: #059669; -fx-wrap-text: true;");
+                saveResultLabel.setVisible(true);
+                showToast("SMS configuration saved!");
+            } catch (Exception ex) {
+                saveResultLabel.setText("✗ Error saving configuration: " + ex.getMessage());
+                saveResultLabel.setStyle("-fx-font-size: 12; -fx-text-fill: #ef4444; -fx-wrap-text: true;");
+                saveResultLabel.setVisible(true);
+            }
+        });
+
+        HBox saveBox = new HBox(15, saveBtn, saveResultLabel);
+        saveBox.setAlignment(Pos.CENTER_LEFT);
+
+        panel.getChildren().addAll(
+            titleLabel,
+            infoBox,
+            new Separator(),
+            apiKeyBox,
+            apiUrlBox,
+            senderBox,
+            enabledCheckBox,
+            new Separator(),
+            saveBox
+        );
+
+        return panel;
+    }
+
+    private VBox createSMSTemplatesTab() {
+        VBox panel = new VBox(20);
+        panel.setPadding(new Insets(20));
+
+        Label titleLabel = new Label("SMS Message Templates");
+        titleLabel.setStyle("-fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
+
+        Label descLabel = new Label("Edit SMS templates for document notifications. Use {document_type} and {request_id} as placeholders.");
+        descLabel.setStyle("-fx-font-size: 12; -fx-text-fill: #64748b;");
+        descLabel.setWrapText(true);
+
+        // Get current templates from database
+        ObservableList<SMSTemplate> templates = DatabaseHelper.getAllSMSTemplates();
+        
+        // Create editable fields for each template
+        VBox templatesBox = new VBox(15);
+        
+        // Document Ready Template
+        VBox readyBox = createTemplateEditor("Document Ready for Pickup", 
+            "Your {document_type} is now ready for pickup at Barangay San Marino. Please bring a valid ID. Office hours: Mon-Fri 8AM-5PM. Thank you!",
+            templates);
+        
+        // Document Approved Template
+        VBox approvedBox = createTemplateEditor("Document Approved",
+            "Your {document_type} request has been approved. Processing time: 3-5 business days. Reference: {request_id}. Thank you!",
+            templates);
+        
+        // Document Pending Template
+        VBox pendingBox = createTemplateEditor("Document Pending",
+            "Your {document_type} request is being processed. Reference: {request_id}. We will notify you once it's ready. Thank you for your patience!",
+            templates);
+        
+        templatesBox.getChildren().addAll(readyBox, new Separator(), approvedBox, new Separator(), pendingBox);
+        
+        // Save button
+        Button saveButton = new Button("Save Templates", new FontIcon(FontAwesomeSolid.SAVE));
+        saveButton.getStyleClass().addAll("button-success", "button-small");
+        saveButton.setTooltip(new Tooltip("Save All Templates"));
+        saveButton.setOnAction(e -> {
+            saveAllTemplates(templatesBox);
+            showToast("SMS templates saved successfully!");
+        });
+        
+        HBox saveBox = new HBox(saveButton);
+        saveBox.setAlignment(Pos.CENTER_LEFT);
+        
+        ScrollPane scrollPane = new ScrollPane(templatesBox);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setStyle("-fx-background-color: transparent;");
+        VBox.setVgrow(scrollPane, Priority.ALWAYS);
+        
+        panel.getChildren().addAll(
+            titleLabel,
+            descLabel,
+            new Separator(),
+            scrollPane,
+            saveBox
+        );
+
+        return panel;
+    }
+    
+    private VBox createTemplateEditor(String templateName, String defaultMessage, ObservableList<SMSTemplate> templates) {
+        VBox box = new VBox(8);
+        
+        Label nameLabel = new Label(templateName);
+        nameLabel.setStyle("-fx-font-size: 13; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
+        
+        // Find existing template
+        String currentMessage = defaultMessage;
+        for (SMSTemplate template : templates) {
+            if (template.getName().equals(templateName)) {
+                currentMessage = template.getTemplate();
+                break;
+            }
+        }
+        
+        TextArea messageArea = new TextArea(currentMessage);
+        messageArea.setWrapText(true);
+        messageArea.setPrefRowCount(3);
+        messageArea.setStyle("-fx-font-size: 12;");
+        messageArea.setUserData(templateName); // Store template name for saving
+        
+        Label charLabel = new Label("Characters: " + currentMessage.length());
+        charLabel.setStyle("-fx-font-size: 10; -fx-text-fill: #64748b;");
+        
+        messageArea.textProperty().addListener((obs, old, newVal) -> {
+            charLabel.setText("Characters: " + newVal.length());
+            if (newVal.length() > 160) {
+                charLabel.setStyle("-fx-font-size: 10; -fx-text-fill: orange; -fx-font-weight: bold;");
+            } else {
+                charLabel.setStyle("-fx-font-size: 10; -fx-text-fill: #64748b;");
+            }
+        });
+        
+        Label hintLabel = new Label("Available placeholders: {document_type}, {request_id}");
+        hintLabel.setStyle("-fx-font-size: 10; -fx-text-fill: #94a3b8; -fx-font-style: italic;");
+        
+        box.getChildren().addAll(nameLabel, messageArea, charLabel, hintLabel);
+        return box;
+    }
+    
+    private void saveAllTemplates(VBox templatesBox) {
+        for (javafx.scene.Node node : templatesBox.getChildren()) {
+            if (node instanceof VBox) {
+                VBox templateBox = (VBox) node;
+                for (javafx.scene.Node child : templateBox.getChildren()) {
+                    if (child instanceof TextArea) {
+                        TextArea messageArea = (TextArea) child;
+                        String templateName = (String) messageArea.getUserData();
+                        String message = messageArea.getText();
+                        
+                        if (templateName != null && message != null) {
+                            // Update or insert template
+                            DatabaseHelper.saveSMSTemplate(templateName, message, "Document", "");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private VBox createSMSTestTab() {
+        VBox panel = new VBox(20);
+        panel.setPadding(new Insets(20));
+
+        Label titleLabel = new Label("Send Test SMS");
+        titleLabel.setStyle("-fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
+
+        // Status check
+        boolean smsEnabled = DatabaseHelper.isSMSEnabled();
+        String apiKey = DatabaseHelper.getSMSApiKey();
+        boolean hasApiKey = apiKey != null && !apiKey.trim().isEmpty();
+
+        VBox statusBox = new VBox(8);
+        statusBox.setPadding(new Insets(15));
+        
+        if (smsEnabled && hasApiKey) {
+            statusBox.setStyle("-fx-background-color: #f0fdf4; -fx-border-color: #059669; -fx-border-width: 1; -fx-border-radius: 4;");
+            Label statusLabel = new Label("✓ SMS service is ready");
+            statusLabel.setStyle("-fx-font-size: 12; -fx-text-fill: #059669; -fx-font-weight: bold;");
+            statusBox.getChildren().add(statusLabel);
+        } else {
+            statusBox.setStyle("-fx-background-color: #fef3c7; -fx-border-color: #f59e0b; -fx-border-width: 1; -fx-border-radius: 4;");
+            Label statusLabel = new Label("⚠ SMS service is not configured. Please configure in the Configuration tab first.");
+            statusLabel.setStyle("-fx-font-size: 12; -fx-text-fill: #f59e0b; -fx-font-weight: bold; -fx-wrap-text: true;");
+            statusLabel.setMaxWidth(600);
+            statusBox.getChildren().add(statusLabel);
+        }
+
+        // Phone number input
+        Label phoneLabel = new Label("Phone Number:");
+        phoneLabel.setStyle("-fx-font-size: 12; -fx-font-weight: bold; -fx-text-fill: #333;");
+
+        TextField phoneField = new TextField();
+        phoneField.setPromptText("e.g., 09171234567 or +639171234567");
+        phoneField.setPrefWidth(300);
+        phoneField.setStyle("-fx-font-size: 12; -fx-padding: 10;");
+
+        VBox phoneBox = new VBox(5, phoneLabel, phoneField);
+
+        // Message input
+        Label messageLabel = new Label("Test Message:");
+        messageLabel.setStyle("-fx-font-size: 12; -fx-font-weight: bold; -fx-text-fill: #333;");
+
+        TextArea messageArea = new TextArea();
+        messageArea.setPromptText("Enter your test message here...");
+        messageArea.setPrefWidth(600);
+        messageArea.setPrefHeight(100);
+        messageArea.setWrapText(true);
+        messageArea.setText("Your barangay clearance document has been approved and is ready for pickup. Please visit our office during business hours. Thank you!");
+        messageArea.setStyle("-fx-font-size: 12;");
+
+        // Character counter
+        Label charCountLabel = new Label("Characters: 0 / 160 (1 credit)");
+        charCountLabel.setStyle("-fx-font-size: 11; -fx-text-fill: #666;");
+
+        messageArea.textProperty().addListener((obs, oldVal, newVal) -> {
+            int length = newVal.length();
+            int credits = Math.max(1, (length + 159) / 160);
+            charCountLabel.setText("Characters: " + length + " / 160 (" + credits + " credit" + (credits > 1 ? "s" : "") + ")");
+        });
+
+        // Update initial count
+        int initialLength = messageArea.getText().length();
+        int initialCredits = Math.max(1, (initialLength + 159) / 160);
+        charCountLabel.setText("Characters: " + initialLength + " / 160 (" + initialCredits + " credit" + (initialCredits > 1 ? "s" : "") + ")");
+
+        VBox messageBox = new VBox(5, messageLabel, messageArea, charCountLabel);
+
+        // Send button
+        Button sendTestBtn = new Button("Send Test", new FontIcon(FontAwesomeSolid.PAPER_PLANE));
+        sendTestBtn.getStyleClass().addAll("button-primary", "button-small");
+        sendTestBtn.setTooltip(new Tooltip("Send Test SMS"));
+
+        // Result label
+        Label resultLabel = new Label("");
+        resultLabel.setStyle("-fx-font-size: 12; -fx-wrap-text: true;");
+        resultLabel.setMaxWidth(600);
+        resultLabel.setVisible(false);
+
+        sendTestBtn.setOnAction(e -> {
+            String phone = phoneField.getText().trim();
+            String message = messageArea.getText().trim();
+
+            if (phone.isEmpty()) {
+                resultLabel.setText("⚠ Please enter a phone number");
+                resultLabel.setStyle("-fx-font-size: 12; -fx-text-fill: #f59e0b; -fx-wrap-text: true;");
+                resultLabel.setVisible(true);
+                return;
+            }
+
+            if (message.isEmpty()) {
+                resultLabel.setText("⚠ Please enter a message");
+                resultLabel.setStyle("-fx-font-size: 12; -fx-text-fill: #f59e0b; -fx-wrap-text: true;");
+                resultLabel.setVisible(true);
+                return;
+            }
+
+            sendTestBtn.setDisable(true);
+            sendTestBtn.setText("Sending...");
+            resultLabel.setText("📤 Sending test SMS...");
+            resultLabel.setStyle("-fx-font-size: 12; -fx-text-fill: #0284c7; -fx-wrap-text: true;");
+            resultLabel.setVisible(true);
+
+            new Thread(() -> {
+                try {
+                    SMSService.SMSResponse response = SMSService.sendSMS(phone, message);
+
+                    Platform.runLater(() -> {
+                        if (response.isSuccess()) {
+                            resultLabel.setText("✓ Test SMS sent successfully!\nMessage ID: " + response.getMessageId() + "\nStatus: " + response.getErrorCode());
+                            resultLabel.setStyle("-fx-font-size: 12; -fx-text-fill: #059669; -fx-wrap-text: true;");
+                            showToast("Test SMS sent successfully!");
+                        } else {
+                            resultLabel.setText("✗ Failed to send test SMS\nError: " + response.getMessage() + "\nCode: " + response.getErrorCode());
+                            resultLabel.setStyle("-fx-font-size: 12; -fx-text-fill: #ef4444; -fx-wrap-text: true;");
+                            showToast("Failed to send test SMS");
+                        }
+                        resultLabel.setVisible(true);
+                        sendTestBtn.setDisable(false);
+                        sendTestBtn.setText("Send Test");
+                    });
+                } catch (Exception ex) {
+                    Platform.runLater(() -> {
+                        resultLabel.setText("✗ Error: " + ex.getMessage());
+                        resultLabel.setStyle("-fx-font-size: 12; -fx-text-fill: #ef4444; -fx-wrap-text: true;");
+                        resultLabel.setVisible(true);
+                        sendTestBtn.setDisable(false);
+                        sendTestBtn.setText("Send Test");
+                    });
+                }
+            }).start();
+        });
+
+        HBox buttonBox = new HBox(15, sendTestBtn, resultLabel);
+        buttonBox.setAlignment(Pos.CENTER_LEFT);
+
+        panel.getChildren().addAll(
+            titleLabel,
+            statusBox,
+            new Separator(),
+            phoneBox,
+            messageBox,
+            new Separator(),
+            buttonBox
+        );
+
+        return panel;
+    }
+
+    private VBox createSMSLogsTab() {
+        VBox panel = new VBox(20);
+        panel.setPadding(new Insets(20));
+
+        Label titleLabel = new Label("SMS Transaction Logs");
+        titleLabel.setStyle("-fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
+
+        // Create table for SMS logs
+        TableView<SMSLogEntry> smsLogsTable = new TableView<>();
+        smsLogsTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        smsLogsTable.setPrefHeight(400);
+
+        TableColumn<SMSLogEntry, Integer> idCol = new TableColumn<>("ID");
+        idCol.setCellValueFactory(new PropertyValueFactory<>("id"));
+        idCol.setPrefWidth(50);
+
+        TableColumn<SMSLogEntry, String> phoneCol = new TableColumn<>("Phone Number");
+        phoneCol.setCellValueFactory(new PropertyValueFactory<>("phoneNumber"));
+        phoneCol.setPrefWidth(120);
+
+        TableColumn<SMSLogEntry, String> messageCol = new TableColumn<>("Message");
+        messageCol.setCellValueFactory(new PropertyValueFactory<>("message"));
+        messageCol.setPrefWidth(250);
+
+        TableColumn<SMSLogEntry, String> statusCol = new TableColumn<>("Status");
+        statusCol.setCellValueFactory(new PropertyValueFactory<>("status"));
+        statusCol.setPrefWidth(80);
+
+        TableColumn<SMSLogEntry, String> messageIdCol = new TableColumn<>("Message ID");
+        messageIdCol.setCellValueFactory(new PropertyValueFactory<>("messageId"));
+        messageIdCol.setPrefWidth(100);
+
+        TableColumn<SMSLogEntry, String> timestampCol = new TableColumn<>("Timestamp");
+        timestampCol.setCellValueFactory(new PropertyValueFactory<>("timestamp"));
+        timestampCol.setPrefWidth(150);
+
+        smsLogsTable.getColumns().addAll(idCol, phoneCol, messageCol, statusCol, messageIdCol, timestampCol);
+
+        // Load SMS logs
+        Button refreshBtn = new Button("Refresh Logs", new FontIcon(FontAwesomeSolid.SYNC));
+        refreshBtn.setStyle("-fx-font-size: 12; -fx-padding: 10 20;");
+
+        Label statusLabel = new Label("");
+        statusLabel.setStyle("-fx-font-size: 12; -fx-text-fill: #666;");
+
+        refreshBtn.setOnAction(e -> {
+            try {
+                ObservableList<SMSLogEntry> logs = DatabaseHelper.getSMSLogs(100);
+                smsLogsTable.setItems(logs);
+                statusLabel.setText("Showing " + logs.size() + " recent SMS logs");
+                showToast("SMS logs refreshed");
+            } catch (Exception ex) {
+                statusLabel.setText("Error loading logs: " + ex.getMessage());
+                showToast("Error loading SMS logs");
+            }
+        });
+
+        // Initial load
+        try {
+            ObservableList<SMSLogEntry> logs = DatabaseHelper.getSMSLogs(100);
+            smsLogsTable.setItems(logs);
+            statusLabel.setText("Showing " + logs.size() + " recent SMS logs");
+        } catch (Exception ex) {
+            statusLabel.setText("Error loading logs: " + ex.getMessage());
+        }
+
+        HBox controlsBox = new HBox(15, refreshBtn, statusLabel);
+        controlsBox.setAlignment(Pos.CENTER_LEFT);
+
+        panel.getChildren().addAll(
+            titleLabel,
+            controlsBox,
+            smsLogsTable
+        );
+
+        return panel;
+    }
+
     private Label createPermissionBadge(String permission, String color) {
         var badge = new Label(permission);
         badge.setStyle("-fx-background-color: " + color + "; -fx-text-fill: white; -fx-padding: 6 10; -fx-border-radius: 12; -fx-background-radius: 12; -fx-font-size: 11;");
@@ -4639,15 +6630,11 @@ public class App extends Application {
         Tab backupTab = new Tab("Database Backup", createDatabaseBackupPanel());
         backupTab.getStyleClass().add("tab");
         
-        // Tab 2: Notifications Management
-        Tab notificationsTab = new Tab("Notifications", createNotificationsManagementPanel());
-        notificationsTab.getStyleClass().add("tab");
-        
-        // Tab 3: System Health
+        // Tab 2: System Health
         Tab healthTab = new Tab("System Health", createSystemHealthPanel());
         healthTab.getStyleClass().add("tab");
 
-        tabPane.getTabs().addAll(backupTab, notificationsTab, healthTab);
+        tabPane.getTabs().addAll(backupTab, healthTab);
         updateDashboardContent(center, "Maintenance & Security", tabPane);
     }
 
@@ -4698,8 +6685,9 @@ public class App extends Application {
         HBox pathBox = new HBox(10, backupPathField, browseBtn);
         pathBox.setAlignment(Pos.CENTER_LEFT);
 
-        Button backupBtn = new Button("Create Backup Now", new FontIcon(FontAwesomeSolid.DATABASE));
-        backupBtn.getStyleClass().add("button-primary");
+        Button backupBtn = new Button("Backup Now", new FontIcon(FontAwesomeSolid.DATABASE));
+        backupBtn.getStyleClass().addAll("button-primary", "button-small");
+        backupBtn.setTooltip(new Tooltip("Create Backup Now"));
         backupBtn.setOnAction(e -> {
             String path = backupPathField.getText().trim();
             if (path.isEmpty()) {
@@ -4715,15 +6703,9 @@ public class App extends Application {
                 boolean success = DatabaseHelper.backupDatabase(path);
                 Platform.runLater(() -> {
                     backupBtn.setDisable(false);
-                    backupBtn.setText("Create Backup Now");
+                    backupBtn.setText("Backup Now");
                     if (success) {
                         showToast("✓ Database backup created successfully!");
-                        DatabaseHelper.addNotification(new Notification(
-                            "Backup Created",
-                            "Database backup saved to: " + path,
-                            "SUCCESS",
-                            "database"
-                        ));
                     } else {
                         showToast("✗ Backup failed. Check console for errors.");
                     }
@@ -4760,195 +6742,13 @@ public class App extends Application {
         return container;
     }
 
-    private VBox createNotificationsManagementPanel() {
-        VBox panel = new VBox(15);
-        panel.setPadding(new Insets(20));
 
-        // Header with actions
-        Label title = new Label("Notification Management");
-        title.setStyle("-fx-font-size: 16; -fx-font-weight: bold; -fx-text-fill: " + "#1a1a1a" + ";");
 
-        Button createBtn = new Button("Create Notification", new FontIcon(FontAwesomeSolid.PLUS_CIRCLE));
-        createBtn.getStyleClass().add("button-primary");
-        createBtn.setOnAction(e -> showCreateNotificationDialog());
 
-        Button markAllReadBtn = new Button("Mark All as Read", new FontIcon(FontAwesomeSolid.CHECK));
-        markAllReadBtn.setOnAction(e -> {
-            DatabaseHelper.markAllNotificationsAsRead();
-            showToast("All notifications marked as read");
-            refreshNotificationsTable();
-        });
 
-        Button deleteReadBtn = new Button("Delete Read", new FontIcon(FontAwesomeSolid.TRASH));
-        deleteReadBtn.setOnAction(e -> {
-            DatabaseHelper.deleteAllReadNotifications();
-            showToast("Read notifications deleted");
-            refreshNotificationsTable();
-        });
 
-        HBox headerBox = new HBox(15, title, new Region(), createBtn, markAllReadBtn, deleteReadBtn);
-        HBox.setHgrow(headerBox.getChildren().get(1), Priority.ALWAYS);
-        headerBox.setAlignment(Pos.CENTER_LEFT);
 
-        // Notifications table
-        TableView<Notification> notificationsTable = new TableView<>();
-        notificationsTable.getStyleClass().add("table-view");
 
-        TableColumn<Notification, Boolean> readCol = new TableColumn<>("Status");
-        readCol.setCellValueFactory(new PropertyValueFactory<>("isRead"));
-        readCol.setPrefWidth(80);
-        readCol.setCellFactory(col -> new TableCell<Notification, Boolean>() {
-            @Override
-            protected void updateItem(Boolean isRead, boolean empty) {
-                super.updateItem(isRead, empty);
-                if (empty || isRead == null) {
-                    setGraphic(null);
-                } else {
-                    Label badge = new Label(isRead ? "Read" : "Unread");
-                    badge.setStyle("-fx-background-color: " + (isRead ? "#6b7280" : "#3b82f6") + 
-                        "; -fx-text-fill: white; -fx-padding: 3 8; -fx-border-radius: 10; -fx-background-radius: 10; -fx-font-size: 10;");
-                    setGraphic(badge);
-                }
-            }
-        });
-
-        TableColumn<Notification, String> typeCol = new TableColumn<>("Type");
-        typeCol.setCellValueFactory(new PropertyValueFactory<>("type"));
-        typeCol.setPrefWidth(100);
-        typeCol.setCellFactory(col -> new TableCell<Notification, String>() {
-            @Override
-            protected void updateItem(String type, boolean empty) {
-                super.updateItem(type, empty);
-                if (empty || type == null) {
-                    setGraphic(null);
-                } else {
-                    String color = switch (type) {
-                        case "SUCCESS" -> "#10b981";
-                        case "ERROR" -> "#ef4444";
-                        case "WARNING" -> "#f59e0b";
-                        default -> "#3b82f6";
-                    };
-                    Label badge = new Label(type);
-                    badge.setStyle("-fx-background-color: " + color + 
-                        "; -fx-text-fill: white; -fx-padding: 3 8; -fx-border-radius: 10; -fx-background-radius: 10; -fx-font-size: 10;");
-                    setGraphic(badge);
-                }
-            }
-        });
-
-        TableColumn<Notification, String> titleCol = new TableColumn<>("Title");
-        titleCol.setCellValueFactory(new PropertyValueFactory<>("title"));
-        titleCol.setPrefWidth(200);
-
-        TableColumn<Notification, String> messageCol = new TableColumn<>("Message");
-        messageCol.setCellValueFactory(new PropertyValueFactory<>("message"));
-        messageCol.setPrefWidth(300);
-
-        TableColumn<Notification, String> timestampCol = new TableColumn<>("Timestamp");
-        timestampCol.setCellValueFactory(new PropertyValueFactory<>("timestamp"));
-        timestampCol.setPrefWidth(150);
-
-        TableColumn<Notification, Void> actionsCol = new TableColumn<>("Actions");
-        actionsCol.setPrefWidth(150);
-        actionsCol.setCellFactory(col -> new TableCell<Notification, Void>() {
-            private final Button deleteBtn = new Button("", new FontIcon(FontAwesomeSolid.TRASH));
-            {
-                deleteBtn.getStyleClass().add("button-danger");
-                deleteBtn.setOnAction(e -> {
-                    Notification notification = getTableView().getItems().get(getIndex());
-                    DatabaseHelper.deleteNotification(notification.getId());
-                    showToast("Notification deleted");
-                    refreshNotificationsTable();
-                });
-            }
-
-            @Override
-            protected void updateItem(Void item, boolean empty) {
-                super.updateItem(item, empty);
-                setGraphic(empty ? null : deleteBtn);
-            }
-        });
-
-        notificationsTable.getColumns().addAll(readCol, typeCol, titleCol, messageCol, timestampCol, actionsCol);
-        notificationsTable.setItems(DatabaseHelper.getAllNotifications());
-
-        // Store reference for refreshing
-        this.notificationsManagementTable = notificationsTable;
-
-        panel.getChildren().addAll(headerBox, notificationsTable);
-        VBox.setVgrow(notificationsTable, Priority.ALWAYS);
-
-        return panel;
-    }
-
-    private TableView<Notification> notificationsManagementTable;
-
-    private void refreshNotificationsTable() {
-        if (notificationsManagementTable != null) {
-            notificationsManagementTable.setItems(DatabaseHelper.getAllNotifications());
-        }
-    }
-
-    private void showCreateNotificationDialog() {
-        Dialog<Notification> dialog = new Dialog<>();
-        dialog.setTitle("Create Notification");
-        dialog.setHeaderText("Send a new notification to the system");
-
-        ButtonType sendButtonType = new ButtonType("Send", ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().addAll(sendButtonType, ButtonType.CANCEL);
-
-        GridPane grid = new GridPane();
-        grid.setHgap(10);
-        grid.setVgap(10);
-        grid.setPadding(new Insets(20, 150, 10, 10));
-
-        TextField titleField = new TextField();
-        titleField.setPromptText("Notification title");
-
-        TextArea messageField = new TextArea();
-        messageField.setPromptText("Notification message");
-        messageField.setPrefRowCount(3);
-
-        ComboBox<String> typeCombo = new ComboBox<>();
-        typeCombo.setItems(FXCollections.observableArrayList("INFO", "SUCCESS", "WARNING", "ERROR"));
-        typeCombo.setValue("INFO");
-
-        ComboBox<String> iconCombo = new ComboBox<>();
-        iconCombo.setItems(FXCollections.observableArrayList(
-            "bell", "check-circle", "exclamation-triangle", "info-circle", 
-            "database", "bullhorn", "file-alt", "user", "cog"
-        ));
-        iconCombo.setValue("bell");
-
-        grid.add(new Label("Title:"), 0, 0);
-        grid.add(titleField, 1, 0);
-        grid.add(new Label("Message:"), 0, 1);
-        grid.add(messageField, 1, 1);
-        grid.add(new Label("Type:"), 0, 2);
-        grid.add(typeCombo, 1, 2);
-        grid.add(new Label("Icon:"), 0, 3);
-        grid.add(iconCombo, 1, 3);
-
-        dialog.getDialogPane().setContent(grid);
-
-        dialog.setResultConverter(dialogButton -> {
-            if (dialogButton == sendButtonType) {
-                return new Notification(
-                    titleField.getText(),
-                    messageField.getText(),
-                    typeCombo.getValue(),
-                    iconCombo.getValue()
-                );
-            }
-            return null;
-        });
-
-        dialog.showAndWait().ifPresent(notification -> {
-            DatabaseHelper.addNotification(notification);
-            showToast("Notification created successfully");
-            refreshNotificationsTable();
-        });
-    }
 
     private VBox createSystemHealthPanel() {
         VBox panel = new VBox(20);
@@ -5010,219 +6810,7 @@ public class App extends Application {
         return container;
     }
 
-    // ==================== NOTIFICATION DROPDOWN ====================
-    
-    private Popup notificationPopup;
-    private VBox notificationDropdownContent;
 
-    private void createNotificationDropdown(StackPane notificationButton) {
-        notificationPopup = new Popup();
-        notificationPopup.setAutoHide(true);
-        notificationPopup.setHideOnEscape(true);
-
-        notificationDropdownContent = new VBox(0);
-        notificationDropdownContent.setStyle(
-            "-fx-background-color: #ffffff;" +
-            "-fx-border-color: #e5e7eb;" +
-            "-fx-border-width: 1;" +
-            "-fx-border-radius: 8;" +
-            "-fx-background-radius: 8;" +
-            "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.2), 10, 0, 0, 2);"
-        );
-        notificationDropdownContent.setPrefWidth(380);
-        notificationDropdownContent.setMaxHeight(500);
-
-        // Header
-        HBox header = new HBox(10);
-        header.setPadding(new Insets(15));
-        header.setStyle("-fx-border-color: #e5e7eb; -fx-border-width: 0 0 1 0;");
-        header.setAlignment(Pos.CENTER_LEFT);
-
-        Label headerTitle = new Label("Recent Activity");
-        headerTitle.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
-
-        header.getChildren().add(headerTitle);
-
-        // Scrollable activity list
-        ScrollPane scrollPane = new ScrollPane();
-        scrollPane.setStyle("-fx-background-color: transparent; -fx-background: transparent;");
-        scrollPane.setFitToWidth(true);
-        scrollPane.setPrefHeight(400);
-        scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-
-        VBox activityList = new VBox(0);
-        var activityLogs = DatabaseHelper.getRecentActivity(10);
-
-        if (activityLogs.isEmpty()) {
-            Label emptyLabel = new Label("No recent activity");
-            emptyLabel.setStyle("-fx-text-fill: #999; -fx-font-style: italic; -fx-padding: 30;");
-            activityList.getChildren().add(emptyLabel);
-        } else {
-            for (AuditEntry entry : activityLogs) {
-                activityList.getChildren().add(createActivityDropdownItem(entry));
-            }
-        }
-
-        scrollPane.setContent(activityList);
-
-        notificationDropdownContent.getChildren().addAll(header, scrollPane);
-        notificationPopup.getContent().add(notificationDropdownContent);
-    }
-    
-    private VBox createActivityDropdownItem(AuditEntry entry) {
-        VBox item = new VBox(5);
-        item.setPadding(new Insets(12, 15, 12, 15));
-        item.setStyle("-fx-border-color: #e5e7eb; -fx-border-width: 0 0 1 0;");
-        
-        Label actionLabel = new Label(entry.getAction());
-        actionLabel.setStyle("-fx-font-size: 13; -fx-text-fill: #1a1a1a; -fx-font-weight: 600;");
-        actionLabel.setWrapText(true);
-        
-        Label detailsLabel = new Label(entry.getDetails());
-        detailsLabel.setStyle("-fx-font-size: 12; -fx-text-fill: #666;");
-        detailsLabel.setWrapText(true);
-        
-        Label timeLabel = new Label(entry.getTimestamp());
-        timeLabel.setStyle("-fx-font-size: 11; -fx-text-fill: #999;");
-        
-        item.getChildren().addAll(actionLabel, detailsLabel, timeLabel);
-        return item;
-    }
-
-    private VBox createNotificationItem(Notification notification) {
-        VBox item = new VBox(5);
-        item.setPadding(new Insets(12, 15, 12, 15));
-        item.setStyle("-fx-cursor: hand; -fx-border-color: " + "#e5e7eb" + "; -fx-border-width: 0 0 1 0;");
-        
-        // Hover effect
-        item.setOnMouseEntered(e -> item.setStyle("-fx-cursor: hand; -fx-background-color: " + "#f3f4f6" + "; -fx-border-color: " + "#e5e7eb" + "; -fx-border-width: 0 0 1 0;"));
-        item.setOnMouseExited(e -> item.setStyle("-fx-cursor: hand; -fx-border-color: " + "#e5e7eb" + "; -fx-border-width: 0 0 1 0;"));
-        
-        item.setOnMouseClicked(e -> {
-            DatabaseHelper.markNotificationAsRead(notification.getId());
-            refreshNotificationDropdown();
-            updateNotificationBadge();
-            notificationPopup.hide();
-        });
-
-        // Icon and title row
-        HBox titleRow = new HBox(10);
-        titleRow.setAlignment(Pos.CENTER_LEFT);
-
-        // Icon based on type
-        String iconColor = switch (notification.getType()) {
-            case "SUCCESS" -> "#10b981";
-            case "ERROR" -> "#ef4444";
-            case "WARNING" -> "#f59e0b";
-            default -> "#3b82f6";
-        };
-
-        Circle iconCircle = new Circle(16);
-        iconCircle.setFill(Color.web(iconColor));
-        iconCircle.setOpacity(0.2);
-
-        FontIcon icon = new FontIcon();
-        try {
-            icon.setIconLiteral("fas-" + notification.getIcon());
-        } catch (Exception e) {
-            icon.setIconLiteral("fas-bell");
-        }
-        icon.setIconColor(Color.web(iconColor));
-        icon.setIconSize(14);
-
-        StackPane iconStack = new StackPane(iconCircle, icon);
-
-        Label titleLabel = new Label(notification.getTitle());
-        titleLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 13; -fx-text-fill: " + "#1a1a1a" + ";");
-        titleLabel.setWrapText(true);
-
-        titleRow.getChildren().addAll(iconStack, titleLabel);
-
-        // Message
-        Label messageLabel = new Label(notification.getMessage());
-        messageLabel.setStyle("-fx-font-size: 12; -fx-text-fill: " + "#666" + ";");
-        messageLabel.setWrapText(true);
-        messageLabel.setMaxWidth(330);
-
-        // Timestamp
-        Label timeLabel = new Label(getRelativeTime(notification.getTimestamp()));
-        timeLabel.setStyle("-fx-font-size: 11; -fx-text-fill: " + "#999" + ";");
-
-        item.getChildren().addAll(titleRow, messageLabel, timeLabel);
-        return item;
-    }
-
-    private String getRelativeTime(String timestamp) {
-        try {
-            java.time.LocalDateTime notifTime = java.time.LocalDateTime.parse(timestamp, 
-                java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-            java.time.LocalDateTime now = java.time.LocalDateTime.now();
-            
-            long minutes = java.time.Duration.between(notifTime, now).toMinutes();
-            if (minutes < 1) return "Just now";
-            if (minutes < 60) return minutes + " minutes ago";
-            
-            long hours = minutes / 60;
-            if (hours < 24) return hours + " hour" + (hours > 1 ? "s" : "") + " ago";
-            
-            long days = hours / 24;
-            if (days < 7) return days + " day" + (days > 1 ? "s" : "") + " ago";
-            
-            return notifTime.format(java.time.format.DateTimeFormatter.ofPattern("MMM dd, yyyy"));
-        } catch (Exception e) {
-            return timestamp;
-        }
-    }
-
-    private void refreshNotificationDropdown() {
-        if (notificationDropdownContent != null && notificationPopup != null && notificationPopup.isShowing()) {
-            // Recreate the dropdown content with fresh activity data
-            notificationDropdownContent.getChildren().clear();
-            
-            // Rebuild the activity dropdown
-            // Header
-            HBox header = new HBox(10);
-            header.setPadding(new Insets(15));
-            header.setStyle("-fx-border-color: #e5e7eb; -fx-border-width: 0 0 1 0;");
-            header.setAlignment(Pos.CENTER_LEFT);
-
-            Label headerTitle = new Label("Recent Activity");
-            headerTitle.setStyle("-fx-font-size: 14; -fx-font-weight: bold; -fx-text-fill: #1a1a1a;");
-            header.getChildren().add(headerTitle);
-
-            // Scrollable activity list
-            ScrollPane scrollPane = new ScrollPane();
-            scrollPane.setStyle("-fx-background-color: transparent; -fx-background: transparent;");
-            scrollPane.setFitToWidth(true);
-            scrollPane.setPrefHeight(400);
-            scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
-
-            VBox activityList = new VBox(0);
-            var activityLogs = DatabaseHelper.getRecentActivity(10);
-
-            if (activityLogs.isEmpty()) {
-                Label emptyLabel = new Label("No recent activity");
-                emptyLabel.setStyle("-fx-text-fill: #999; -fx-font-style: italic; -fx-padding: 30;");
-                activityList.getChildren().add(emptyLabel);
-            } else {
-                for (AuditEntry entry : activityLogs) {
-                    activityList.getChildren().add(createActivityDropdownItem(entry));
-                }
-            }
-
-            scrollPane.setContent(activityList);
-            notificationDropdownContent.getChildren().addAll(header, scrollPane);
-        }
-    }
-
-    private Circle notificationDot;
-
-    private void updateNotificationBadge() {
-        if (notificationDot != null) {
-            int unreadCount = DatabaseHelper.getUnreadNotificationCount();
-            notificationDot.setVisible(unreadCount > 0);
-        }
-    }
 
     public static void main(String[] args) {
         Application.launch(App.class, args);

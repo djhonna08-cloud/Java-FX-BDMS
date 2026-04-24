@@ -15,6 +15,7 @@ public class Resident {
     private final StringProperty address;
     private final StringProperty imagePath;
     private final StringProperty role;
+    private final StringProperty phoneNumber;
     
     // Extended fields for professor's CSV format
     private final IntegerProperty familyId;
@@ -34,6 +35,7 @@ public class Resident {
         this.address = new SimpleStringProperty(address);
         this.imagePath = new SimpleStringProperty("");
         this.role = new SimpleStringProperty("");
+        this.phoneNumber = new SimpleStringProperty("");
         
         // Initialize extended fields with defaults
         this.familyId = new SimpleIntegerProperty(0);
@@ -56,6 +58,7 @@ public class Resident {
         this.address = new SimpleStringProperty(address);
         this.imagePath = new SimpleStringProperty("");
         this.role = new SimpleStringProperty("");
+        this.phoneNumber = new SimpleStringProperty("");
         
         // Initialize extended fields
         this.familyId = new SimpleIntegerProperty(familyId != null ? familyId : 0);
@@ -86,6 +89,8 @@ public class Resident {
     public void setImagePath(String value) { imagePath.set(value); }
     public String getRole() { return role.get(); }
     public void setRole(String value) { role.set(value); }
+    public String getPhoneNumber() { return phoneNumber.get(); }
+    public void setPhoneNumber(String value) { phoneNumber.set(value); }
 
     // Getters for JavaFX properties (for TableView)
     public IntegerProperty idProperty() { return id; }
@@ -97,6 +102,7 @@ public class Resident {
     public StringProperty addressProperty() { return address; }
     public StringProperty imagePathProperty() { return imagePath; }
     public StringProperty roleProperty() { return role; }
+    public StringProperty phoneNumberProperty() { return phoneNumber; }
     
     // Extended field getters
     public Integer getFamilyId() { return familyId.get(); }
